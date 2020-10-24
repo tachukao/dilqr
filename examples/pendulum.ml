@@ -12,7 +12,7 @@ module P = struct
   let g = AD.F 9.8
   let mu = AD.F 0.01
 
-  let dyn ~k:_k ~x ~u =
+  let dyn ~k:_k ~theta:_theta ~x ~u =
     let x1 = AD.Maths.get_slice [ []; [ 0 ] ] x in
     let x2 = AD.Maths.get_slice [ []; [ 1 ] ] x in
     let b = AD.pack_arr (Mat.of_arrays [| [| 1.; 0. |] |] |> Mat.transpose) in
@@ -22,6 +22,7 @@ module P = struct
     AD.Maths.(x + (dx * dt))
 
 
+  let theta = AD.F 0.
   let dyn_x = None
   let dyn_u = None
   let rl_xx = None
@@ -36,7 +37,7 @@ module P = struct
     let q = Owl.Mat.(eye n *$ 5.) |> AD.pack_arr in
     let xstar = [| [| 0.; 0. |] |] |> Mat.of_arrays |> AD.pack_arr in
     let r = Owl.Mat.(eye m *$ 1E-20) |> AD.pack_arr in
-    fun ~k:_k ~x ~u ->
+    fun ~k:_k ~theta:_theta ~x ~u ->
       let dx = AD.Maths.(xstar - x) in
       let input = AD.(Maths.(F 0.5 * sum' (u *@ r * u))) in
       let state = AD.(Maths.(F 0.5 * sum' (dx *@ q * dx))) in
@@ -46,12 +47,12 @@ module P = struct
   let final_loss =
     let q = Owl.Mat.(eye n *$ 0.) |> AD.pack_arr in
     let xstar = [| [| 0.; 0. |] |] |> Mat.of_arrays |> AD.pack_arr in
-    fun ~k:_k ~x ->
+    fun ~k:_k ~theta:_theta ~x ->
       let dx = AD.Maths.(xstar - x) in
       AD.(Maths.(F 0.5 * sum' (dx *@ q * dx)))
 end
 
-module M = Ilqr.Default.Make (P)
+module M = Dilqr.Default.Make (P)
 
 let () =
   let x0 = [| [| Const.pi; 0. |] |] |> Mat.of_arrays |> AD.pack_arr in

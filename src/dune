@@ -1,4 +1,3 @@
 (library
- (name ilqr)
- (public_name ilqr)
+ (name dilqr)
  (libraries owl))
