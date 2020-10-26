@@ -1,5 +1,6 @@
 open Owl
 module AD = Algodiff.D
+open AD.Builder
 
 let _ = Printexc.record_backtrace true
 
@@ -230,16 +231,6 @@ module Make (P : P) = struct
             ~axis:0
             [| AD.Maths.concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |] |]
         in
-        let _ =
-          Printf.printf
-            "%i %i %i %i %i %i %!"
-            (AD.Mat.row_num big_ctf_top)
-            (AD.Mat.col_num big_ctf_top)
-            (AD.Mat.row_num tau_f)
-            (AD.Mat.row_num tau_f)
-            (AD.Mat.row_num flx)
-            (AD.Mat.row_num flx)
-        in
         AD.Maths.(transpose (big_ctf_top *@ transpose tau_f) + flx)
       in
       let small_ctf = AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] in
@@ -250,10 +241,46 @@ module Make (P : P) = struct
            ; AD.Maths.concatenate ~axis:1 [| AD.Mat.zeros n (n + m) |]
           |]
       in
-      backward lambda_f ([ tau_f ], [], [ big_ctf ], [ small_ctf ], [ lambda_f ]) tape
+      backward
+        lambda_f
+        ([ tau_f ], [ AD.Mat.zeros n (n + m) ], [ big_ctf ], [ small_ctf ], [ lambda_f ])
+        tape
     in
     let pack x = AD.Maths.concatenate ~axis:0 (Array.of_list x) in
     [| pack taus; pack fs; pack big_cs; pack small_cs; pack lambdas |]
+
+
+  let lqr_update ?theta ?rl_u ?rl_x =
+    let forward_for_backward =
+      forward_for_backward
+        ?theta
+        ?dyn_x
+        ?dyn_u
+        ?rl_uu
+        ?rl_xx
+        ?rl_ux
+        ?rl_u
+        ?rl_x
+        ~dyn
+        ~running_loss
+        ~final_loss
+        ()
+    in
+    fun x0 us ->
+      (* xf, xs, us are in reverse *)
+      let vxxf, vxf, tape, _ = forward_for_backward x0 us in
+      let acc, _ = Lqr.backward vxxf vxf tape in
+      let _, _, taus =
+        List.fold_left
+          (fun (k, xi, taus) (_, _, (_K, _k)) ->
+            let u = AD.Maths.((xi *@ _K) + _k) in
+            let next_x = dyn ?theta ~k ~x:xi ~u in
+            let tau = AD.Maths.concatenate ~axis:1 [| xi; u |] in
+            succ k, next_x, tau :: taus)
+          (0, x0, [])
+          acc
+      in
+      List.rev taus
 
 
   (*lambda is a row vector as well*)
@@ -282,4 +309,97 @@ module Make (P : P) = struct
   let _g1 ?theta ~stop x0 us =
     let ustars = learn ?theta ~stop x0 us in
     g x0 ustars
+
+
+  let g2 n_steps =
+    let tau_bar _x _y ybar () = !ybar in
+    let rlx tau_bar =
+      let f ?theta:_theta ~k ~x:_x ~u:_u =
+        AD.Maths.get_slice [ [ k ]; [ 0; pred n ] ] tau_bar
+      in
+      f
+    in
+    let rlu tau_bar =
+      let f ?theta:_theta ~k ~x:_x ~u:_u =
+        AD.Maths.get_slice [ [ k ]; [ n; -1 ] ] tau_bar
+      in
+      f
+    in
+    let dlambdas tau_bar fs cs =
+      let ds =
+        lqr_update
+          ~rl_u:(rlu tau_bar)
+          ~rl_x:(rlx tau_bar)
+          (AD.Mat.zeros 1 n)
+          (List.init n_steps (fun _ -> AD.Mat.zeros 1 m))
+      in
+      let _, _, dlambdas =
+        List.fold_left
+          (fun (k, lambda_next, lambdas) d ->
+            let rlx = AD.Maths.get_slice [ [ k ]; [ 0; pred n ] ] tau_bar in
+            let a = AD.Maths.get_slice [ [ k * n; k * succ n ]; [ 0; pred n ] ] fs in
+            let big_ct_top =
+              AD.Maths.get_slice [ [ k * (n + m); k * succ (n + m) ]; [ 0; pred n ] ] cs
+            in
+            let new_lambda = AD.Maths.((lambda_next *@ a) + (d *@ big_ct_top) + rlx) in
+            pred k, new_lambda, lambda_next :: lambdas)
+          (List.length ds, AD.Mat.zeros n n, [])
+          (*not the right dlambda_f, dummy thing for now *)
+          ds
+      in
+      ( AD.Maths.concatenate ~axis:0 (Array.of_list (List.rev ds))
+      , AD.Maths.concatenate ~axis:0 (Array.of_list dlambdas) )
+    in
+    let big_ct_bar x _y _ybar dtaus () =
+      AD.Maths.concatenate
+        ~axis:0
+        (Array.init n_steps (fun i ->
+             let dt = AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] dtaus
+             and tau =
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] x.(0)
+             in
+             AD.Maths.(F 0.5 * ((tau *@ dt) + (dt *@ tau)))))
+    in
+    let big_ft_bar x _y _ybar dlambdas () =
+      AD.Maths.concatenate
+        ~axis:0
+        (Array.init n_steps (fun i ->
+             let dl =
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] dlambdas
+             and tau =
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] x.(5)
+             in
+             AD.Maths.(F 0.5 * ((tau *@ dl) + (dl *@ tau)))))
+    in
+    build_aiso
+      (module struct
+        let label = "g2"
+
+        let ff a =
+          let x = Array.map AD.primal' a in
+          x.(0)
+
+
+        let df _ _ _ _ = raise (Owl_exception.NOT_IMPLEMENTED "g2 forward mode")
+
+        let dr idxs x y ybar =
+          (* returns xbars as a list that correspond to idxs 
+           * e.g. idxs = [0; 3; 5]
+           * x0 = x.(0), x3 = x.(3)
+           * then return  [x0bar; x3bar; x5bar]
+           * *)
+          let dts, dlambdas = dlambdas !ybar x.(2) x.(1) in
+          List.map
+            (fun idx ->
+              if idx = 0
+              then tau_bar x y ybar ()
+              else if idx = 1
+              then big_ct_bar x y ybar dts ()
+              else if idx = 2
+              then big_ft_bar x y ybar dlambdas ()
+              else if idx = 3
+              then dts
+              else dlambdas)
+            idxs
+      end : Aiso)
 end
