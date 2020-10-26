@@ -1,6 +1,8 @@
 open Owl
 module AD = Algodiff.D
 
+let _ = Printexc.record_backtrace true
+
 type t = k:int -> theta:AD.t -> x:AD.t -> u:AD.t -> AD.t
 type s = k:int -> theta:AD.t -> x:AD.t -> AD.t
 type final_loss = k:int -> theta:AD.t -> x:AD.t -> AD.t
@@ -178,26 +180,7 @@ module Make (P : P) = struct
     AD.Maths.(fl + rl) |> AD.unpack_flt
 
 
-  let learn ~stop x0 us =
-    let rec loop iter us =
-      if stop iter us
-      then us
-      else (
-        let f0 = loss x0 us in
-        let update = update x0 us in
-        let f alpha =
-          let us, df = update alpha in
-          let fv = loss x0 us in
-          fv, Some df, us
-        in
-        match Linesearch.backtrack f0 f with
-        | Some us -> loop (succ iter) us
-        | None    -> failwith "linesearch did not converge ")
-    in
-    loop 0 us
-
-
-  let _g1 x0 u_stars =
+  let g x0 u_stars =
     let dyn_u =
       let default ~k ~theta ~x ~u =
         AD.jacobian (fun u -> dyn ~k ~theta ~x ~u) u |> AD.Maths.transpose
@@ -274,9 +257,14 @@ module Make (P : P) = struct
               |]
           in
           let small_ct = AD.Maths.concatenate ~axis:1 [| rlx; rlu |] in
-          let ft = AD.Maths.concatenate ~axis:1 [| a; b |] in
+          let a_padded = AD.Maths.concatenate ~axis:0 [| a; AD.Mat.zeros m n |] in
+          let b_padded = AD.Maths.concatenate ~axis:0 [| AD.Mat.zeros n m; b |] in
+          let ft = AD.Maths.concatenate ~axis:1 [| a_padded; b_padded |] in
           let tau = AD.Maths.concatenate ~axis:1 [| x; u |] in
-          let new_lambda = AD.Maths.((ft *@ lambda) + (big_ct *@ tau) + small_ct) in
+          let new_lambda =
+            AD.Maths.(
+              transpose ((ft *@ transpose lambda) + (big_ct *@ transpose tau)) + small_ct)
+          in
           backward
             new_lambda
             ( tau :: taus
@@ -300,7 +288,7 @@ module Make (P : P) = struct
             |]
         in
         let small_ctf = AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] in
-        AD.Maths.((big_ctf *@ tau_f) + small_ctf)
+        AD.Maths.(transpose (big_ctf *@ transpose tau_f) + small_ctf)
       in
       backward
         lambda_f
@@ -315,7 +303,7 @@ module Make (P : P) = struct
         , [ lambda_f ] )
         tape
     in
-    let pack x = AD.Maths.concatenate ~axis:1 (Array.of_list x) in
+    let pack x = AD.Maths.concatenate ~axis:0 (Array.of_list x) in
     [| pack otaus
      ; pack oa_s
      ; pack ob_s
@@ -326,4 +314,27 @@ module Make (P : P) = struct
      ; pack oquu
      ; pack olambdas
     |]
+
+
+  (*lambda is a row vector as well*)
+
+  let learn ~stop x0 us =
+    let rec loop iter us =
+      if stop iter us
+      then (
+        let _ = g x0 us in
+        us)
+      else (
+        let f0 = loss x0 us in
+        let update = update x0 us in
+        let f alpha =
+          let us, df = update alpha in
+          let fv = loss x0 us in
+          fv, Some df, us
+        in
+        match Linesearch.backtrack f0 f with
+        | Some us -> loop (succ iter) us
+        | None    -> failwith "linesearch did not converge ")
+    in
+    loop 0 us
 end

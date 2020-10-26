@@ -73,6 +73,6 @@ let () =
         |> AD.Maths.concatenate ~axis:0
         |> AD.unpack_arr
         |> Mat.save_txt ~out:(in_dir "us"));
-      pct_change < 1E-10
+      pct_change < 1E-1
   in
   M.learn ~stop x0 us |> ignore
