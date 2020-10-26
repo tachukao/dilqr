@@ -1,10 +1,10 @@
 open Owl
 module AD = Algodiff.D
 
-type t = k:int -> theta:AD.t -> x:AD.t -> u:AD.t -> AD.t
-type s = k:int -> theta:AD.t -> x:AD.t -> AD.t
-type final_loss = k:int -> theta:AD.t -> x:AD.t -> AD.t
-type running_loss = k:int -> theta:AD.t -> x:AD.t -> u:AD.t -> AD.t
+type t = ?theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
+type s = ?theta:AD.t -> k:int -> x:AD.t -> AD.t
+type final_loss = ?theta:AD.t -> k:int -> x:AD.t -> AD.t
+type running_loss = ?theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
 val forward_for_backward
   :  ?dyn_x:t
