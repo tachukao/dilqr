@@ -74,15 +74,15 @@ let forward_for_backward
     let kf, xf, tape =
       List.fold_left
         (fun (k, x, tape) u ->
-          let a = dyn_x ~k ?theta ~x ~u
-          and b = dyn_u ~k ?theta ~x ~u
-          and rlx = rl_x ~k ?theta ~x ~u
-          and rlu = rl_u ~k ?theta ~x ~u
-          and rlxx = rl_xx ~k ?theta ~x ~u
-          and rluu = rl_uu ~k ?theta ~x ~u
-          and rlux = rl_ux ~k ?theta ~x ~u in
+          let a = dyn_x ?theta ~k ~x ~u
+          and b = dyn_u ?theta ~k ~x ~u
+          and rlx = rl_x ?theta ~k ~x ~u
+          and rlu = rl_u ?theta ~k ~x ~u
+          and rlxx = rl_xx ?theta ~k ~x ~u
+          and rluu = rl_uu ?theta ~k ~x ~u
+          and rlux = rl_ux ?theta ~k ~x ~u in
           let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux } in
-          let x = dyn ~k ?theta ~x ~u in
+          let x = dyn ?theta ~k ~x ~u in
           succ k, x, s :: tape)
         (0, x0, [])
         us
@@ -151,7 +151,7 @@ module Make (P : P) = struct
               let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
               let uhat = AD.Maths.(u + du) in
               let uhats = uhat :: uhats in
-              let xhat = dyn ~k ?theta ~x:xhat ~u:uhat in
+              let xhat = dyn ?theta ~k ~x:xhat ~u:uhat in
               succ k, xhat, uhats)
             (0, x0, [])
             acc
@@ -167,11 +167,11 @@ module Make (P : P) = struct
 
 
   let loss ?theta x0 us =
-    let kf, xf, xs, us = forward x0 us ?theta in
-    let fl = final_loss ~k:kf ?theta ~x:xf in
+    let kf, xf, xs, us = forward ?theta x0 us in
+    let fl = final_loss ?theta ~k:kf ~x:xf in
     let _, rl =
       List.fold_left2
-        (fun (k, rl) x u -> pred k, AD.Maths.(rl + running_loss ~k ?theta ~x ~u))
+        (fun (k, rl) x u -> pred k, AD.Maths.(rl + running_loss ?theta ~k ~x ~u))
         (kf - 1, AD.F 0.)
         xs
         us
@@ -180,8 +180,9 @@ module Make (P : P) = struct
 
 
   let g ?theta x0 ustars =
-    let flx, flxx, tape, xf =
+    let flxx, flx, tape, xf =
       forward_for_backward
+        ?theta
         ?dyn_x
         ?dyn_u
         ?rl_uu
@@ -190,7 +191,6 @@ module Make (P : P) = struct
         ?rl_u
         ?rl_x
         ~dyn
-        ?theta
         ~running_loss
         ~final_loss
         ()
@@ -198,8 +198,8 @@ module Make (P : P) = struct
         ustars
     in
     let tau_f = AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] in
-    let taus, a_s, b_s, qx, qu, qux, qxx, quu, lambdas =
-      let rec backward lambda (taus, a_s, b_s, qx, qu, qux, qxx, quu, lambdas) = function
+    let taus, fs, big_cs, small_cs, lambdas =
+      let rec backward lambda (taus, fs, big_cs, small_cs, lambdas) = function
         | Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux } :: tl ->
           let big_ct =
             AD.Maths.concatenate
@@ -208,59 +208,52 @@ module Make (P : P) = struct
                ; AD.Maths.concatenate ~axis:1 [| rlux; rluu |]
               |]
           in
+          let big_ct_top = AD.Maths.get_slice [ []; [ 0; pred n ] ] big_ct in
           let small_ct = AD.Maths.concatenate ~axis:1 [| rlx; rlu |] in
           let ft = AD.Maths.concatenate ~axis:0 [| a; b |] in
           let tau = AD.Maths.concatenate ~axis:1 [| x; u |] in
-          let new_lambda = AD.Maths.((lambda *@ ft) + (tau *@ big_ct) + small_ct) in
+          let new_lambda = AD.Maths.((lambda *@ a) + (tau *@ big_ct_top) + rlx) in
           backward
             new_lambda
             ( tau :: taus
-            , a :: a_s
-            , b :: b_s
-            , rlx :: qx
-            , rlu :: qu
-            , rlux :: qux
-            , rlxx :: qxx
-            , rluu :: quu
+            , ft :: fs
+            , big_ct :: big_cs
+            , small_ct :: small_cs
             , new_lambda :: lambdas )
             tl
-        | [] -> taus, a_s, b_s, qx, qu, qux, qxx, quu, lambdas
+        | [] -> taus, fs, big_cs, small_cs, lambdas
       in
       let lambda_f =
-        let big_ctf =
+        let _ = Printf.printf "%i %i %!" (AD.Mat.row_num flxx) (AD.Mat.col_num flxx) in
+        let big_ctf_top =
           AD.Maths.concatenate
             ~axis:0
-            [| AD.Maths.concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |]
-             ; AD.Maths.concatenate ~axis:1 [| AD.Mat.zeros m n; AD.Mat.zeros m m |]
-            |]
+            [| AD.Maths.concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |] |]
         in
-        let small_ctf = AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] in
-        AD.Maths.(transpose (big_ctf *@ transpose tau_f) + small_ctf)
+        let _ =
+          Printf.printf
+            "%i %i %i %i %i %i %!"
+            (AD.Mat.row_num big_ctf_top)
+            (AD.Mat.col_num big_ctf_top)
+            (AD.Mat.row_num tau_f)
+            (AD.Mat.row_num tau_f)
+            (AD.Mat.row_num flx)
+            (AD.Mat.row_num flx)
+        in
+        AD.Maths.(transpose (big_ctf_top *@ transpose tau_f) + flx)
       in
-      backward
-        lambda_f
-        ( [ tau_f ]
-        , []
-        , []
-        , [ flx ]
-        , [ AD.Mat.zeros 1 m ]
-        , [ AD.Mat.zeros m n ]
-        , [ flxx ]
-        , [ AD.Mat.zeros m m ]
-        , [ lambda_f ] )
-        tape
+      let small_ctf = AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] in
+      let big_ctf =
+        AD.Maths.concatenate
+          ~axis:0
+          [| AD.Maths.concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |]
+           ; AD.Maths.concatenate ~axis:1 [| AD.Mat.zeros n (n + m) |]
+          |]
+      in
+      backward lambda_f ([ tau_f ], [], [ big_ctf ], [ small_ctf ], [ lambda_f ]) tape
     in
     let pack x = AD.Maths.concatenate ~axis:0 (Array.of_list x) in
-    [| pack taus
-     ; pack a_s
-     ; pack b_s
-     ; pack qx
-     ; pack qu
-     ; pack qux
-     ; pack qxx
-     ; pack quu
-     ; pack lambdas
-    |]
+    [| pack taus; pack fs; pack big_cs; pack small_cs; pack lambdas |]
 
 
   (*lambda is a row vector as well*)
@@ -286,7 +279,7 @@ module Make (P : P) = struct
     loop 0 us
 
 
-  let g1 ?theta ~stop x0 us =
+  let _g1 ?theta ~stop x0 us =
     let ustars = learn ?theta ~stop x0 us in
     g x0 ustars
 end
