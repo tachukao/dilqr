@@ -96,6 +96,7 @@ let forward_for_backward
 module type P = sig
   val n : int
   val m : int
+  val n_steps : int
   val dyn : t
   val final_loss : final_loss
   val running_loss : running_loss
@@ -225,7 +226,6 @@ module Make (P : P) = struct
         | [] -> taus, fs, big_cs, small_cs, lambdas
       in
       let lambda_f =
-        let _ = Printf.printf "%i %i %!" (AD.Mat.row_num flxx) (AD.Mat.col_num flxx) in
         let big_ctf_top =
           AD.Maths.concatenate
             ~axis:0
@@ -241,10 +241,7 @@ module Make (P : P) = struct
            ; AD.Maths.concatenate ~axis:1 [| AD.Mat.zeros n (n + m) |]
           |]
       in
-      backward
-        lambda_f
-        ([ tau_f ], [ AD.Mat.zeros n (n + m) ], [ big_ctf ], [ small_ctf ], [ lambda_f ])
-        tape
+      backward lambda_f ([ tau_f ], [], [ big_ctf ], [ small_ctf ], [ lambda_f ]) tape
     in
     let pack x = AD.Maths.concatenate ~axis:0 (Array.of_list x) in
     [| pack taus; pack fs; pack big_cs; pack small_cs; pack lambdas |]
@@ -268,7 +265,7 @@ module Make (P : P) = struct
     in
     fun x0 us ->
       (* xf, xs, us are in reverse *)
-      let vxxf, vxf, tape, _ = forward_for_backward x0 us in
+      let vxxf, vxf, tape, xf = forward_for_backward x0 us in
       let acc, _ = Lqr.backward vxxf vxf tape in
       let _, _, taus =
         List.fold_left
@@ -280,7 +277,7 @@ module Make (P : P) = struct
           (0, x0, [])
           acc
       in
-      List.rev taus
+      List.rev taus, xf, vxf, vxxf
 
 
   (*lambda is a row vector as well*)
@@ -306,44 +303,57 @@ module Make (P : P) = struct
     loop 0 us
 
 
-  let _g1 ?theta ~stop x0 us =
+  let g1 ?theta ~stop x0 us =
     let ustars = learn ?theta ~stop x0 us in
     g x0 ustars
 
 
-  let g2 n_steps =
+  let g2 =
     let tau_bar _x _y ybar () = !ybar in
-    let rlx tau_bar =
+    let get_x tau_bar =
       let f ?theta:_theta ~k ~x:_x ~u:_u =
         AD.Maths.get_slice [ [ k ]; [ 0; pred n ] ] tau_bar
       in
       f
     in
-    let rlu tau_bar =
+    let get_u tau_bar =
       let f ?theta:_theta ~k ~x:_x ~u:_u =
         AD.Maths.get_slice [ [ k ]; [ n; -1 ] ] tau_bar
       in
       f
     in
     let dlambdas tau_bar fs cs =
-      let ds =
+      let ds, dxf, flx, flxx =
         lqr_update
-          ~rl_u:(rlu tau_bar)
-          ~rl_x:(rlx tau_bar)
+          ~rl_u:(get_u tau_bar)
+          ~rl_x:(get_x tau_bar)
           (AD.Mat.zeros 1 n)
           (List.init n_steps (fun _ -> AD.Mat.zeros 1 m))
+      in
+      let dtf = AD.Maths.concatenate ~axis:1 [| dxf; AD.Mat.zeros 1 m |] in
+      let dlambda_f =
+        let big_ctf_top =
+          AD.Maths.concatenate
+            ~axis:0
+            [| AD.Maths.concatenate ~axis:0 [| flxx; AD.Mat.zeros m n |] |]
+        in
+        AD.Maths.((dtf *@ big_ctf_top) + flx)
       in
       let _, _, dlambdas =
         List.fold_left
           (fun (k, lambda_next, lambdas) d ->
             let rlx = AD.Maths.get_slice [ [ k ]; [ 0; pred n ] ] tau_bar in
-            let a = AD.Maths.get_slice [ [ k * n; k * succ n ]; [ 0; pred n ] ] fs in
+            let a =
+              AD.Maths.get_slice [ [ k * n; ((k + 1) * n) - 1 ]; [ 0; pred n ] ] fs
+            in
             let big_ct_top =
-              AD.Maths.get_slice [ [ k * (n + m); k * succ (n + m) ]; [ 0; pred n ] ] cs
+              AD.Maths.get_slice
+                [ [ k * (n + m); ((k + 1) * (n + m)) - 1 ]; [ 0; pred n ] ]
+                cs
             in
             let new_lambda = AD.Maths.((lambda_next *@ a) + (d *@ big_ct_top) + rlx) in
             pred k, new_lambda, lambda_next :: lambdas)
-          (List.length ds, AD.Mat.zeros n n, [])
+          (List.length ds, dlambda_f, [])
           (*not the right dlambda_f, dummy thing for now *)
           ds
       in
@@ -354,22 +364,31 @@ module Make (P : P) = struct
       AD.Maths.concatenate
         ~axis:0
         (Array.init n_steps (fun i ->
-             let dt = AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] dtaus
+             let dt =
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ (succ i * (n + m)) - 1 ] ] dtaus
              and tau =
-               AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] x.(0)
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ (succ i * (n + m)) - 1 ] ] x.(0)
              in
              AD.Maths.(F 0.5 * ((tau *@ dt) + (dt *@ tau)))))
     in
-    let big_ft_bar x _y _ybar dlambdas () =
+    let big_ft_bar x _y _ybar dlambdas dts () =
       AD.Maths.concatenate
         ~axis:0
-        (Array.init n_steps (fun i ->
+        (Array.init (n_steps - 1) (fun i ->
              let dl =
-               AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] dlambdas
+               AD.Maths.get_slice
+                 [ [ (i + 1) * (n + m) ]; [ (succ (i + 1) * (n + m)) - 1 ] ]
+                 dlambdas
              and tau =
-               AD.Maths.get_slice [ [ i * (n + m) ]; [ succ i * (n + m) ] ] x.(5)
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ (succ i * (n + m)) - 1 ] ] x.(0)
+             and lambda =
+               AD.Maths.get_slice
+                 [ [ (i + 1) * (n + m) ]; [ (succ (i + 1) * (n + m)) - 1 ] ]
+                 x.(4)
+             and dt =
+               AD.Maths.get_slice [ [ i * (n + m) ]; [ (succ i * (n + m)) - 1 ] ] dts
              in
-             AD.Maths.(F 0.5 * ((tau *@ dl) + (dl *@ tau)))))
+             AD.Maths.((lambda *@ dt) + (dl *@ tau))))
     in
     build_aiso
       (module struct
@@ -388,7 +407,7 @@ module Make (P : P) = struct
            * x0 = x.(0), x3 = x.(3)
            * then return  [x0bar; x3bar; x5bar]
            * *)
-          let dts, dlambdas = dlambdas !ybar x.(2) x.(1) in
+          let dts, dlambdas = dlambdas !ybar x.(1) x.(2) in
           List.map
             (fun idx ->
               if idx = 0
@@ -396,10 +415,10 @@ module Make (P : P) = struct
               else if idx = 1
               then big_ct_bar x y ybar dts ()
               else if idx = 2
-              then big_ft_bar x y ybar dlambdas ()
+              then big_ft_bar x y ybar dlambdas dts ()
               else if idx = 3
               then dts
-              else dlambdas)
+              else raise (Owl_exception.NOT_IMPLEMENTED "lambda_bar"))
             idxs
       end : Aiso)
 end

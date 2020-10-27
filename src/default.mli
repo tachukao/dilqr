@@ -28,6 +28,7 @@ val forward_for_backward
 module type P = sig
   val n : int
   val m : int
+  val n_steps : int
   val dyn : t
   val final_loss : final_loss
   val running_loss : running_loss
@@ -52,4 +53,21 @@ module Make (P : P) : sig
     -> AD.t
     -> AD.t list
     -> AD.t list
+
+  val g1
+    :  ?theta:AD.t
+    -> stop:(int -> AD.t list -> bool)
+    -> AD.t
+    -> AD.t list
+    -> AD.t array
+
+  val lqr_update
+    :  ?theta:AD.t
+    -> ?rl_u:t
+    -> ?rl_x:t
+    -> AD.t
+    -> AD.t list
+    -> AD.t list * AD.t * AD.t * AD.t
+
+  val g2 : AD.t array -> AD.t
 end
