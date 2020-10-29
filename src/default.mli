@@ -19,8 +19,6 @@ val forward_for_backward
   -> fl_xx:s
   -> fl_x:s
   -> dyn:t
-  -> running_loss:running_loss
-  -> final_loss:final_loss
   -> unit
   -> AD.t
   -> AD.t list
@@ -55,20 +53,5 @@ module Make (P : P) : sig
     -> AD.t list
     -> AD.t list
 
-  val g1
-    :  ?theta:AD.t
-    -> stop:(int -> AD.t list -> bool)
-    -> AD.t
-    -> AD.t list
-    -> AD.t array
-
-  val lqr_update
-    :  ?theta:AD.t
-    -> ?rl_u:t
-    -> ?rl_x:t
-    -> AD.t
-    -> AD.t list
-    -> AD.t list * AD.t * AD.t * AD.t
-
-  val g2 : AD.t array -> AD.t
+  val ilqr : AD.t -> AD.t -> stop:(int -> AD.t list -> bool) -> AD.t list -> AD.t
 end
