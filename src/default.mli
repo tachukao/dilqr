@@ -1,5 +1,6 @@
 open Owl
 module AD = Algodiff.D
+open Bmo
 
 type t = ?theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 type s = ?theta:AD.t -> k:int -> x:AD.t -> AD.t
@@ -8,15 +9,15 @@ type running_loss = ?theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
 val forward_for_backward
   :  ?theta:AD.t
-  -> ?dyn_x:t
-  -> ?dyn_u:t
-  -> ?rl_uu:t
-  -> ?rl_xx:t
-  -> ?rl_ux:t
-  -> ?rl_u:t
-  -> ?rl_x:t
-  -> ?fl_xx:s
-  -> ?fl_x:s
+  -> dyn_x:t
+  -> dyn_u:t
+  -> rl_uu:t
+  -> rl_xx:t
+  -> rl_ux:t
+  -> rl_u:t
+  -> rl_x:t
+  -> fl_xx:s
+  -> fl_x:s
   -> dyn:t
   -> running_loss:running_loss
   -> final_loss:final_loss
