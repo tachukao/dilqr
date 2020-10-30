@@ -45,7 +45,7 @@ end
 module Make (P : P) : sig
   val trajectory : ?theta:AD.t -> AD.t -> AD.t list -> AD.t
   val loss : ?theta:AD.t -> AD.t -> AD.t list -> float
-
+  val differentiable_loss : ?theta:AD.t -> AD.t -> AD.t
   val learn
     :  ?theta:AD.t
     -> stop:(int -> AD.t list -> bool)

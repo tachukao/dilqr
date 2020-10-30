@@ -38,7 +38,7 @@ let backward flxx flx tape =
           let qtux = AD.Maths.(qux + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ at)) in
           let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
           let _k =
-            AD.Linalg.(linsolve qtuu (AD.Maths.transpose qu))
+            AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
             |> AD.Maths.transpose
             |> AD.Maths.neg
           in
