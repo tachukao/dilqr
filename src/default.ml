@@ -4,10 +4,10 @@ open AD.Builder
 
 let _ = Printexc.record_backtrace true
 
-type t = ?theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
-type s = ?theta:AD.t -> k:int -> x:AD.t -> AD.t
-type final_loss = ?theta:AD.t -> k:int -> x:AD.t -> AD.t
-type running_loss = ?theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
+type t = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
+type s = theta:AD.t -> k:int -> x:AD.t -> AD.t
+type final_loss = theta:AD.t -> k:int -> x:AD.t -> AD.t
+type running_loss = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
 let print_dim str x =
   let shp = AD.Arr.shape x in
@@ -17,7 +17,7 @@ let print_dim str x =
 
 
 let forward_for_backward
-    ?theta
+    ~theta
     ~dyn_x
     ~dyn_u
     ~rl_uu
@@ -35,21 +35,21 @@ let forward_for_backward
   let kf, xf, tape =
     List.fold_left
       (fun (k, x, tape) u ->
-        let a = dyn_x ?theta ~k ~x ~u
-        and b = dyn_u ?theta ~k ~x ~u
-        and rlx = rl_x ?theta ~k ~x ~u
-        and rlu = rl_u ?theta ~k ~x ~u
-        and rlxx = rl_xx ?theta ~k ~x ~u
-        and rluu = rl_uu ?theta ~k ~x ~u
-        and rlux = rl_ux ?theta ~k ~x ~u in
+        let a = dyn_x ~theta ~k ~x ~u
+        and b = dyn_u ~theta ~k ~x ~u
+        and rlx = rl_x ~theta ~k ~x ~u
+        and rlu = rl_u ~theta ~k ~x ~u
+        and rlxx = rl_xx ~theta ~k ~x ~u
+        and rluu = rl_uu ~theta ~k ~x ~u
+        and rlux = rl_ux ~theta ~k ~x ~u in
         let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux } in
-        let x = dyn ?theta ~k ~x ~u in
+        let x = dyn ~theta ~k ~x ~u in
         succ k, x, s :: tape)
       (0, x0, [])
       us
   in
-  let flxx = fl_xx ?theta ~k:kf ~x:xf in
-  let flx = fl_x ?theta ~k:kf ~x:xf in
+  let flxx = fl_xx ~theta ~k:kf ~x:xf in
+  let flx = fl_x ~theta ~k:kf ~x:xf in
   flxx, flx, tape, xf
 
 
@@ -75,74 +75,74 @@ module Make (P : P) = struct
   include P
 
   let dyn_u =
-    let default ?theta ~k ~x ~u =
-      AD.jacobian (fun u -> dyn ?theta ~k ~x ~u) u |> AD.Maths.transpose
+    let default ~theta ~k ~x ~u =
+      AD.jacobian (fun u -> dyn ~theta ~k ~x ~u) u |> AD.Maths.transpose
     in
     Option.value dyn_u ~default
 
 
   let dyn_x =
-    let default ?theta ~k ~x ~u =
-      AD.jacobian (fun x -> dyn ?theta ~k ~x ~u) x |> AD.Maths.transpose
+    let default ~theta ~k ~x ~u =
+      AD.jacobian (fun x -> dyn ~theta ~k ~x ~u) x |> AD.Maths.transpose
     in
     Option.value dyn_x ~default
 
 
   let rl_u =
-    let default ?theta ~k ~x ~u = AD.grad (fun u -> running_loss ?theta ~k ~x ~u) u in
+    let default ~theta ~k ~x ~u = AD.grad (fun u -> running_loss ~theta ~k ~x ~u) u in
     Option.value rl_u ~default
 
 
   let rl_x =
-    let default ?theta ~k ~x ~u = AD.grad (fun x -> running_loss ?theta ~k ~x ~u) x in
+    let default ~theta ~k ~x ~u = AD.grad (fun x -> running_loss ~theta ~k ~x ~u) x in
     Option.value rl_x ~default
 
 
   let rl_uu =
-    let default ?theta ~k ~x ~u =
-      AD.jacobian (fun u -> rl_u ?theta ~k ~x ~u) u |> AD.Maths.transpose
+    let default ~theta ~k ~x ~u =
+      AD.jacobian (fun u -> rl_u ~theta ~k ~x ~u) u |> AD.Maths.transpose
     in
     Option.value rl_uu ~default
 
 
   let rl_xx =
-    let default ?theta ~k ~x ~u =
-      AD.jacobian (fun x -> rl_x ?theta ~k ~x ~u) x |> AD.Maths.transpose
+    let default ~theta ~k ~x ~u =
+      AD.jacobian (fun x -> rl_x ~theta ~k ~x ~u) x |> AD.Maths.transpose
     in
     Option.value rl_xx ~default
 
 
   let rl_ux =
-    let default ?theta ~k ~x ~u = AD.jacobian (fun x -> rl_u ?theta ~k ~x ~u) x in
+    let default ~theta ~k ~x ~u = AD.jacobian (fun x -> rl_u ~theta ~k ~x ~u) x in
     Option.value rl_ux ~default
 
 
   let fl_x =
-    let default ?theta ~k ~x = AD.grad (fun x -> final_loss ?theta ~k ~x) x in
+    let default ~theta ~k ~x = AD.grad (fun x -> final_loss ~theta ~k ~x) x in
     Option.value fl_x ~default
 
 
   let fl_xx =
-    let default ?theta ~k ~x =
-      AD.jacobian (fun x -> fl_x ?theta ~k ~x) x |> AD.Maths.transpose
+    let default ~theta ~k ~x =
+      AD.jacobian (fun x -> fl_x ~theta ~k ~x) x |> AD.Maths.transpose
     in
     Option.value fl_xx ~default
 
 
-  let forward ?theta x0 us =
+  let forward ~theta x0 us =
     List.fold_left
       (fun (k, x, xs, us) u ->
         let xs = x :: xs in
         let us = u :: us in
-        let x = dyn ?theta ~k ~x ~u in
+        let x = dyn ~theta ~k ~x ~u in
         succ k, x, xs, us)
       (0, x0, [], [])
       us
 
 
-  let ffb ?theta =
+  let ffb ~theta =
     forward_for_backward
-      ?theta
+      ~theta
       ~dyn_x
       ~dyn_u
       ~rl_uu
@@ -156,9 +156,9 @@ module Make (P : P) = struct
       ()
 
 
-  let update ?theta x0 us =
+  let update ~theta x0 us =
     (* xf, xs, us are in reverse *)
-    let vxxf, vxf, tape, _ = ffb ?theta x0 us in
+    let vxxf, vxf, tape, _ = ffb ~theta x0 us in
     let acc, (df1, df2) = Lqr.backward vxxf vxf tape in
     fun alpha ->
       let _, _, uhats =
@@ -168,7 +168,7 @@ module Make (P : P) = struct
             let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
             let uhat = AD.Maths.(u + du) in
             let uhats = uhat :: uhats in
-            let xhat = dyn ?theta ~k ~x:xhat ~u:uhat in
+            let xhat = dyn ~theta ~k ~x:xhat ~u:uhat in
             succ k, xhat, uhats)
           (0, x0, [])
           acc
@@ -177,18 +177,18 @@ module Make (P : P) = struct
       List.rev uhats, df
 
 
-  let trajectory ?theta x0 us =
-    let _, xf, xs, _ = forward ?theta x0 us in
+  let trajectory ~theta x0 us =
+    let _, xf, xs, _ = forward ~theta x0 us in
     let xs = List.rev xs |> Array.of_list |> AD.Maths.concatenate ~axis:0 in
     AD.Maths.concatenate ~axis:0 [| xs; xf |]
 
 
-  let loss ?theta x0 us =
-    let kf, xf, xs, us = forward ?theta x0 us in
-    let fl = final_loss ?theta ~k:kf ~x:xf in
+  let loss ~theta x0 us =
+    let kf, xf, xs, us = forward ~theta x0 us in
+    let fl = final_loss ~theta ~k:kf ~x:xf in
     let _, rl =
       List.fold_left2
-        (fun (k, rl) x u -> pred k, AD.Maths.(rl + running_loss ?theta ~k ~x ~u))
+        (fun (k, rl) x u -> pred k, AD.Maths.(rl + running_loss ~theta ~k ~x ~u))
         (kf - 1, AD.F 0.)
         xs
         us
@@ -196,7 +196,7 @@ module Make (P : P) = struct
     AD.Maths.(fl + rl) |> AD.unpack_flt
 
 
-  let differentiable_loss ?theta taus_f =
+  let differentiable_loss ~theta taus_f =
     let array_taus =
       taus_f
       |> fun x -> AD.Maths.split ~axis:0 (Array.init (AD.Arr.shape x).(0) (fun _ -> 1)) x
@@ -212,17 +212,15 @@ module Make (P : P) = struct
             , AD.Maths.get_slice [ []; [ n; -1 ] ] tau )
           in
           if i = pred tf
-          then (
-            let _ = Printf.printf "final i  %i %!" i in
-            [| final_loss ?theta ~k:(succ i) ~x |])
-          else [| running_loss ?theta ~k:(succ i) ~x ~u |])
+          then [| final_loss ~theta ~k:(succ i) ~x |]
+          else [| running_loss ~theta ~k:(succ i) ~x ~u |])
         array_taus
     in
     AD.Maths.of_arrays mapped |> AD.Maths.sum'
 
 
-  let g ?theta x0 ustars =
-    let flxx, flx, tape, xf = ffb ?theta x0 ustars in
+  let g ~theta x0 ustars =
+    let flxx, flx, tape, xf = ffb ~theta x0 ustars in
     let tau_f = AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] in
     let taus, fs, big_cs, small_cs, lambdas =
       let rec backward lambda (taus, fs, big_cs, small_cs, lambdas) = function
@@ -274,10 +272,10 @@ module Make (P : P) = struct
     [| pack taus; pack fs; pack big_cs; pack small_cs; pack lambdas |]
 
 
-  let lqr_update ?theta ~rl_u ~rl_x =
+  let lqr_update ~theta ~rl_u ~rl_x =
     let forward_for_backward =
       forward_for_backward
-        ?theta
+        ~theta
         ~dyn_x
         ~dyn_u
         ~rl_uu
@@ -298,8 +296,14 @@ module Make (P : P) = struct
         List.fold_left
           (fun (k, xi, taus) (_, _, (_K, _k)) ->
             let u = AD.Maths.((xi *@ _K) + _k) in
-            let next_x = dyn ?theta ~k ~x:xi ~u in
             let tau = AD.Maths.concatenate ~axis:1 [| xi; u |] in
+            let lin_dyn =
+              AD.Maths.concatenate
+                ~axis:0
+                [| dyn_x ~theta ~k ~x:xi ~u; dyn_u ~theta ~k ~x:xi ~u |]
+            in
+            let next_x = AD.Maths.(tau *@ lin_dyn) in
+            (* let next_x = dyn ~theta ~k ~x:xi ~u in *)
             succ k, next_x, tau :: taus)
           (0, x0, [])
           acc
@@ -309,29 +313,29 @@ module Make (P : P) = struct
 
   (*lambda is a row vector as well*)
 
-  let learn ?theta ~stop x0 us =
+  let learn ~theta ~stop x0 us =
     let rec loop iter us =
       if stop iter us
       then us
       else (
-        let f0 = loss x0 us in
-        let update = update ?theta x0 us in
+        let f0 = loss ~theta x0 us in
+        let update = update ~theta x0 us in
         let f alpha =
           let us, df = update alpha in
-          let fv = loss x0 us in
+          let fv = loss ~theta x0 us in
           fv, Some df, us
         in
         match Linesearch.backtrack f0 f with
         | Some us -> loop (succ iter) us
-        | None    -> failwith "linesearch did not converge ")
+        | None    -> failwith "linesearch did not converge")
     in
     loop 0 us
 
 
-  let g2 =
+  let g2 ~theta =
     let tau_bar _x _y ybar () = !ybar in
     let get_x tau_bar =
-      let f ?theta:_theta ~k ~x:_x ~u:_u =
+      let f ~theta:_theta ~k ~x:_x ~u:_u =
         AD.Maths.reshape
           (AD.Maths.get_slice [ [ k ]; []; [ 0; pred n ] ] tau_bar)
           [| 1; n |]
@@ -339,18 +343,25 @@ module Make (P : P) = struct
       f
     in
     let get_u tau_bar =
-      let f ?theta:_theta ~k ~x:_x ~u:_u =
-        AD.Maths.reshape (AD.Maths.get_slice [ [ k ]; []; [ n; -1 ] ] tau_bar) [| 1; n |]
+      let f ~theta:_theta ~k ~x:_x ~u:_u =
+        AD.Maths.reshape (AD.Maths.get_slice [ [ k ]; []; [ n; -1 ] ] tau_bar) [| 1; m |]
       in
       f
     in
     let ds tau_bar fs cs =
       let ctbars, dxf, flx, flxx =
         lqr_update
+          ~theta
           ~rl_u:(get_u tau_bar)
           ~rl_x:(get_x tau_bar)
           (AD.Mat.zeros 1 n)
           (List.init n_steps (fun _ -> AD.Mat.zeros 1 m))
+      in
+      let _ =
+        let carray = Array.of_list ctbars in
+        Mat.save_txt
+          ~out:"ctbars"
+          (AD.unpack_arr (AD.Maths.reshape carray.(100) [| 1; n + m |]))
       in
       let ctbar_f = AD.Maths.concatenate ~axis:1 [| dxf; AD.Mat.zeros 1 m |] in
       let ctbars = ctbar_f :: ctbars in
@@ -436,7 +447,15 @@ module Make (P : P) = struct
               if idx = 0
               then tau_bar x y ybar ()
               else if idx = 1
-              then big_ft_bar x y ybar dlambdas ctbars ()
+              then (
+                let ftbar = big_ft_bar x y ybar dlambdas ctbars () in
+                Mat.save_txt
+                  ~out:"ftbars"
+                  (AD.unpack_arr
+                     (AD.Maths.reshape
+                        (AD.Maths.get_slice [ [ 100 ]; []; [] ] ftbar)
+                        [| n + m; n |]));
+                ftbar)
               else if idx = 2
               then big_ct_bar x y ybar ctbars ()
               else if idx = 3
@@ -452,7 +471,7 @@ module Make (P : P) = struct
     x0, theta
 
 
-  let g3 ?theta taus =
+  let g3 ~theta taus =
     let _ = print_dim "g3 taus input" taus in
     let taus =
       AD.Maths.split ~axis:0 (Array.init (AD.Arr.shape taus).(0) (fun _ -> 1)) taus
@@ -480,11 +499,11 @@ module Make (P : P) = struct
                   ~axis:0
                   [| AD.Maths.concatenate
                        ~axis:1
-                       [| fl_xx ?theta ~k ~x; AD.Mat.zeros n (n + m) |]
+                       [| fl_xx ~theta ~k ~x; AD.Mat.zeros n (n + m) |]
                    ; AD.Mat.zeros (n + m) m
                   |]
               and small_c =
-                AD.Maths.concatenate ~axis:1 [| fl_x ?theta ~k ~x; AD.Mat.zeros 1 m |]
+                AD.Maths.concatenate ~axis:1 [| fl_x ~theta ~k ~x; AD.Mat.zeros 1 m |]
               in
               let _ =
                 print_dim "f " f, print_dim "big_c " big_c, print_dim "small_c " small_c
@@ -499,29 +518,26 @@ module Make (P : P) = struct
                 in *)
                 AD.Maths.concatenate
                   ~axis:0
-                  [| dyn_x ?theta ~k ~x ~u; dyn_u ?theta ~k ~x ~u |]
+                  [| dyn_x ~theta ~k ~x ~u; dyn_u ~theta ~k ~x ~u |]
               and big_c =
                 AD.Maths.concatenate
                   ~axis:0
                   [| AD.Maths.concatenate
                        ~axis:1
-                       [| rl_xx ?theta ~k ~x ~u
-                        ; AD.Maths.transpose (rl_ux ?theta ~k ~x ~u)
+                       [| rl_xx ~theta ~k ~x ~u
+                        ; AD.Maths.transpose (rl_ux ~theta ~k ~x ~u)
                        |]
                    ; AD.Maths.concatenate
                        ~axis:1
-                       [| rl_ux ?theta ~k ~x ~u
-                        ; AD.Maths.transpose (rl_uu ?theta ~k ~x ~u)
+                       [| rl_ux ~theta ~k ~x ~u
+                        ; AD.Maths.transpose (rl_uu ~theta ~k ~x ~u)
                        |]
                   |]
               and small_c =
                 AD.Maths.concatenate
                   ~axis:1
-                  [| rl_x ?theta ~k ~x ~u; rl_u ?theta ~k ~x ~u |]
+                  [| rl_x ~theta ~k ~x ~u; rl_u ~theta ~k ~x ~u |]
               in
-              (* let _ =
-                print_dim "f " f, print_dim "big_c " big_c, print_dim "small_c " small_c
-              in *)
               f, big_c, small_c)
           in
           succ k, f :: fs, big_c :: big_cs, small_c :: small_cs)
@@ -534,14 +550,15 @@ module Make (P : P) = struct
 
 
   let g1 ~stop us =
-    let forward_g1 ?theta ~stop x0 us =
-      let ustars = learn ?theta ~stop x0 us in
-      g x0 ustars
+    let forward_g1 ~theta ~stop x0 us =
+      let ustars = learn ~theta ~stop x0 us in
+      g ~theta x0 ustars
     in
     let theta_b x y ybar =
       let _, theta = unpack x in
       let theta = AD.primal' theta in
       let taus = AD.primal' !(y.(0)) in
+      (*ybar(1) is ftbar*)
       let theta = AD.make_reverse theta (AD.tag ()) in
       let y' = g3 ~theta taus in
       let y'bar =
@@ -570,14 +587,21 @@ module Make (P : P) = struct
         let dr x _ y ybars =
           let x0bar =
             let taubar = !(ybars.(0)) in
-            let x0bar = AD.Maths.get_slice [ [ 0 ]; []; [ 0; n - 1 ] ] taubar in
-            AD.Maths.reshape x0bar [| 1; n |]
+            let xb = AD.Maths.get_slice [ [ 0 ]; []; [ 0; n - 1 ] ] taubar in
+            let _ = print_dim "xb" xb in
+            Mat.save_txt ~out:"x0bar" (AD.unpack_arr (AD.Maths.reshape xb [| 1; n |]));
+            AD.Maths.reshape xb [| 1; n |]
           in
-          let theta_bar = theta_b x y ybars in
+          let theta_bar =
+            let tb = theta_b x y ybars in
+            let _ = print_dim "tb" tb in
+            Mat.save_txt ~out:"thetabar" (AD.unpack_arr tb);
+            tb
+          in
           AD.Maths.concatenate ~axis:1 [| x0bar; theta_bar |]
       end : Siao)
 
 
   let ilqr x0 theta ~stop us =
-    g1 ~stop us AD.Maths.(concatenate ~axis:1 [| x0; theta |]) |> g2
+    g1 ~stop us AD.Maths.(concatenate ~axis:1 [| x0; theta |]) |> g2 ~theta
 end
