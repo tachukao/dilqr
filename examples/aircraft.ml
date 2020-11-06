@@ -25,28 +25,30 @@ module P = struct
 
   let dyn ~theta ~k:_k ~x ~u =
     let dx =
-      AD.Maths.((__a *@ transpose x) + (sum' theta * transpose x) + (__b *@ transpose u))
-      |> AD.Maths.transpose
+      AD.Maths.((__a *@ transpose x) + (__b *@ transpose u)) |> AD.Maths.transpose
     in
     AD.Maths.(x + (dx * dt))
 
 
-  let dyn_x = None
-
-  (* let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
-      AD.Maths.((__a * dt) + AD.Mat.eye n)
+  let dyn_x =
+    let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
+      AD.Maths.(
+        AD.Mat.of_arrays [| [| 1.; 0.; 0. |]; [| 0.; 1.; 0. |]; [| 0.; 0.; 1. |] |]
+        + (__a * dt))
       (* let theta = theta |> AD.Maths.sum' in *)
       |> AD.Maths.transpose
     in
-    Some f *)
+    Some f
 
-  let dyn_u = None
 
-  (* let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
-      AD.Maths.((__b * dt) + AD.Mat.zeros m n)
+  let dyn_u =
+    let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
+      AD.Maths.(__b * dt)
       (* let theta = theta |> AD.Maths.sum' in *)
+      |> AD.Maths.transpose
     in
-    Some f *)
+    Some f
+
 
   let rl_xx = None
   let rl_ux = None
@@ -67,7 +69,7 @@ module P = struct
         AD.Maths.(
           dt
           * ((p * sum' (transpose dy *@ dy))
-            + sum' (sqr theta * sum' (sqr u))
+            (* + sum' (sqr theta * sum' (sqr u)) *)
             + sum' (q * sum' (sqr u))))
       in
       input
@@ -77,13 +79,12 @@ module P = struct
     let y = AD.Maths.(__c *@ transpose x) in
     let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
     let _dy = AD.Maths.(y - y_ref) in
-    AD.Maths.(AD.F 1. * sum' (sqr theta * sqr _dy))
+    AD.Maths.(AD.F 0. * sum' (sqr theta * sqr _dy))
 end
 
 module M = Dilqr.Default.Make (P)
 
 let unpack a =
-  let _ = Printf.printf "calling unpack %!" in
   let x0 = AD.Maths.get_slice [ []; [ 0; P.n - 1 ] ] a in
   let theta = AD.Maths.get_slice [ []; [ P.n; pred 0 ] ] a in
   x0, theta
@@ -113,7 +114,16 @@ let () =
   let f us prms =
     let x0, theta = unpack prms in
     let l prms =
+      let _ = Printf.printf "before : %! " in
+      let _ = AD.Mat.print (AD.adjval prms) in
+      let _ = Printf.printf " %! " in
       let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
+      let _ = Printf.printf "\n after : %!" in
+      let _ = AD.Mat.print (AD.adjval prms) in
+      let _ = Printf.printf "%!" in
+      let fin_taus = AD.primal' fin_taus in
+      (* let fin_taus = AD.Arr.zeros [| P.n_steps; 1; P.n + P.m |] in *)
+      let theta = AD.primal' theta in
       let _ =
         Mat.save_txt
           ~out:"taus_ilqr"
@@ -128,7 +138,7 @@ let () =
     in
     let c = l prms in
     let _ = Printf.printf "cost %f %!" (AD.unpack_flt c) in
-    c
+    AD.F 0.
   in
   let max_steps = 2
   and eta = AD.F 0.0001 in
@@ -144,9 +154,9 @@ let () =
           Mat.load_txt "results/us"
           |> fun m -> Mat.map_rows (fun x -> AD.pack_arr x) m |> Array.to_list
       in
-      let dff = df new_us (AD.primal' prms) in
+      let dff = df new_us prms in
       let new_prms = AD.Maths.(prms - (eta * dff)) in
-      let _ = Mat.save_txt ~out:"grads" (AD.unpack_arr (AD.primal' dff)) in
+      let _ = Mat.save_txt ~out:"grads" (AD.unpack_arr dff) in
       let _ = Mat.save_txt ~out:"prms" (AD.unpack_arr (AD.primal' prms)) in
       grad_descent (succ k) new_prms)
   in
@@ -154,13 +164,12 @@ let () =
     0
     (AD.Maths.concatenate
        ~axis:1
-       [| AD.Mat.of_arrays [| [| 0.05; 0.; 2. |] |]; AD.Mat.of_arrays [| [| 0.3 |] |] |])
+       [| AD.Mat.of_arrays [| [| 0.05; 0.; 2. |] |]; AD.Mat.of_arrays [| [| 1. |] |] |])
   |> ignore
-
 
 (*problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them
   doesn't take into account the theta value?*)
-let test =
+(* let test =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
@@ -205,4 +214,4 @@ let test =
   let b1, k1 =
     FD.Reverse.check ~threshold ~order:`fourth ~eps ~directions ~f:ff samples
   in
-  Printf.printf "%b, %i\n%!" b1 k1
+  Printf.printf "%b, %i\n%!" b1 k1 *)

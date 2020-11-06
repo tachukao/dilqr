@@ -56,17 +56,19 @@ module P = struct
   let running_loss =
     let r = Owl.Mat.(eye m *$ 1E-5) |> AD.pack_arr in
     let q = Owl.Mat.(eye m *$ 1E-5) |> AD.pack_arr in
-    fun ~theta:_ ~k:_k ~x ~u ->
-      let input = AD.(Maths.((F 0.5 * sum' (u *@ r * u)) + sum' (x *@ q * x))) in
+    fun ~theta ~k:_k ~x ~u ->
+      let input =
+        AD.(Maths.((F 0.5 * sum' (u *@ r * u)) + (sum' (sqr theta) * sum' (x *@ q * x))))
+      in
       input
 
 
   let final_loss =
     let q = Owl.Mat.(eye n *$ 5.) |> AD.pack_arr in
     let xstar = [| [| 0.; 0. |] |] |> Mat.of_arrays |> AD.pack_arr in
-    fun ~theta:_ ~k:_k ~x ->
+    fun ~theta ~k:_k ~x ->
       let dx = AD.Maths.(xstar - x) in
-      AD.(Maths.(AD.F 0. * sum' (dx *@ q * dx)))
+      AD.(Maths.(sum' (sqr theta) * sum' (dx *@ q * dx)))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -161,7 +163,7 @@ let test =
   let n_samples = 1 in
   let stop prms =
     let _ = AD.Mat.print prms in
-    let x0, theta = AD.Mat.ones 1 2, prms in
+    let x0, theta = unpack prms in
     let _ = AD.Mat.print x0, AD.Mat.print theta in
     let cprev = ref 1E9 in
     fun k us ->
@@ -177,10 +179,10 @@ let test =
         |> AD.Maths.concatenate ~axis:0
         |> AD.unpack_arr
         |> Mat.save_txt ~out:(in_dir "us"));
-      pct_change < 1E-3
+      pct_change < 1E-8
   in
   let f us prms =
-    let x0, theta = AD.Mat.ones 1 2, prms in
+    let x0, theta = unpack prms in
     let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
     let _ =
       Mat.save_txt
@@ -195,7 +197,7 @@ let test =
     M.differentiable_loss ~theta fin_taus
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
-  let samples, directions = FD.generate_test_samples (1, 3) n_samples in
+  let samples, directions = FD.generate_test_samples (1, 1) n_samples in
   let threshold = 1E-3 in
   let eps = 1E-5 in
   let b1, k1 =

@@ -591,9 +591,17 @@ module Make (P : P) = struct
       let theta = AD.primal' theta in
       let taus = AD.primal' !(y.(0)) in
       (*ybar(1) is ftbar*)
-      let theta = AD.make_reverse theta (AD.tag ()) in
+      (* let theta = AD.make_reverse theta (AD.tag ()) in *)
       let y' = g3 ~theta taus in
       let y'bar =
+        let _ =
+          Mat.save_txt
+            ~out:"ctbar_bis"
+            (AD.unpack_arr
+               (AD.Maths.reshape
+                  (AD.Maths.get_slice [ []; []; [] ] !(ybar.(3)))
+                  [| 2001; n + m |]))
+        in
         AD.Maths.concatenate
           ~axis:2
           [| !(ybar.(1))
@@ -601,8 +609,10 @@ module Make (P : P) = struct
            ; AD.Maths.transpose ~axis:[| 0; 2; 1 |] !(ybar.(3))
           |]
       in
-      AD.reverse_prop y'bar y';
-      AD.adjval theta
+      (* AD.reverse_prop y'bar y'; *)
+      let adj = AD.adjval theta in
+      Mat.save_txt ~out:"adj" (AD.unpack_arr adj);
+      adj
     in
     build_siao
       (module struct
@@ -625,8 +635,14 @@ module Make (P : P) = struct
                 ~out:"dlambdas_after"
                 (AD.unpack_arr
                    (AD.Maths.reshape
-                      (AD.Maths.get_slice [ []; []; [] ] dlambdas)
-                      [| 2001; n |]))
+                      (AD.Maths.get_slice [ []; []; [] ] !(ybars.(4)))
+                      [| 2001; n |]));
+              Mat.save_txt
+                ~out:"ctbars_after"
+                (AD.unpack_arr
+                   (AD.Maths.reshape
+                      (AD.Maths.get_slice [ []; []; [] ] !(ybars.(3)))
+                      [| 2001; n + m |]))
             in
             let xb = AD.Maths.(get_slice [ [ 0 ]; []; [] ] dlambdas) in
             Mat.save_txt ~out:"x0bar" (AD.unpack_arr (AD.Maths.reshape xb [| 1; n |]));
@@ -638,7 +654,9 @@ module Make (P : P) = struct
             Mat.save_txt ~out:"thetabar" (AD.unpack_arr tb);
             tb
           in
-          AD.Maths.concatenate ~axis:1 [| x0bar; theta_bar |]
+          let taub = AD.Maths.concatenate ~axis:1 [| x0bar; theta_bar |] in
+          Mat.save_txt ~out:"x0tbar" (AD.unpack_arr taub);
+          taub
       end : Siao)
 
 
