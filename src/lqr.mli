@@ -18,3 +18,9 @@ val backward
   -> AD.t
   -> t list
   -> (AD.t * AD.t * (AD.t * AD.t)) list * (float * float)
+
+val backward_aug
+  :  AD.t
+  -> AD.t
+  -> t list
+  -> (AD.t * AD.t * (AD.t * AD.t) * AD.t * AD.t) list * (float * float)
