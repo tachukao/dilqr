@@ -620,6 +620,14 @@ module Make (P : P) = struct
           let x0bar =
             (* let taubar = !(ybars.(0)) in *)
             let dlambdas = !(ybars.(4)) in
+            let _ =
+              Mat.save_txt
+                ~out:"dlambdas_after"
+                (AD.unpack_arr
+                   (AD.Maths.reshape
+                      (AD.Maths.get_slice [ []; []; [] ] dlambdas)
+                      [| 2001; n |]))
+            in
             let xb = AD.Maths.(get_slice [ [ 0 ]; []; [] ] dlambdas) in
             Mat.save_txt ~out:"x0bar" (AD.unpack_arr (AD.Maths.reshape xb [| 1; n |]));
             AD.Maths.reshape xb [| 1; n |]
