@@ -81,7 +81,7 @@ module P = struct
     let y = AD.Maths.(__c *@ transpose x) in
     let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
     let _dy = AD.Maths.(y - y_ref) in
-    AD.Maths.(AD.F 0. * sum' (sqr theta * sqr _dy))
+    AD.Maths.(sum' (sqr theta * sqr _dy))
 end
 
 module M = Dilqr.Default.Make (P)
