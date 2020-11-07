@@ -71,7 +71,7 @@ module P = struct
         AD.Maths.(
           dt
           * ((p * sum' (transpose dy *@ dy))
-            (* + sum' (sqr theta * sum' (sqr u)) *)
+            + sum' (sqr theta * sum' (sqr u))
             + sum' (q * sum' (sqr u))))
       in
       input
@@ -92,7 +92,7 @@ let unpack a =
   x0, theta
 
 
-let () =
+let example () =
   let stop prms =
     let x0, theta = unpack prms in
     let cprev = ref 1E9 in
@@ -152,15 +152,14 @@ let () =
        [| AD.Mat.of_arrays [| [| 0.05; 0.; 2. |] |]; AD.Mat.of_arrays [| [| 1. |] |] |])
   |> ignore
 
+
 (*problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them
   doesn't take into account the theta value?*)
-(* let test =
+let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    let _ = AD.Mat.print prms in
     let x0, theta = AD.Mat.zeros 1 3, prms in
-    let _ = AD.Mat.print x0, AD.Mat.print theta in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -182,7 +181,7 @@ let () =
     let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
     let _ =
       Mat.save_txt
-        ~out:"taus_ilqr"
+        ~out:(in_tmp_dir "taus_ilqr")
         (AD.unpack_arr
            (AD.Maths.reshape
               fin_taus
@@ -194,9 +193,14 @@ let () =
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
   let samples, directions = FD.generate_test_samples (1, 1) n_samples in
-  let threshold = 1. in
+  let threshold = 1E-5 in
   let eps = 1E-5 in
   let b1, k1 =
     FD.Reverse.check ~threshold ~order:`fourth ~eps ~directions ~f:ff samples
   in
-  Printf.printf "%b, %i\n%!" b1 k1 *)
+  Printf.printf "%b, %i\n%!" b1 k1
+
+
+let () =
+  example ();
+  test_grad ()

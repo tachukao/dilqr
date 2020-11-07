@@ -516,11 +516,6 @@ module Make (P : P) = struct
               f, big_c, small_c)
             else (
               let f =
-                (* let _ =
-                  match theta with
-                  | Some x -> print_dim "theta" x
-                  | None   -> ()
-                in *)
                 AD.Maths.concatenate
                   ~axis:0
                   [| dyn_x ~theta ~k ~x ~u; dyn_u ~theta ~k ~x ~u |]
@@ -561,19 +556,11 @@ module Make (P : P) = struct
     in
     let theta_b x y ybar =
       let _, theta = unpack x in
-      let theta = AD.primal' theta in
       let taus = AD.primal' !(y.(0)) in
+      let theta = AD.primal' theta in
       let theta = AD.make_reverse theta (AD.tag ()) in
       let y' = g3 ~theta taus in
       let y'bar =
-        let _ =
-          Mat.save_txt
-            ~out:(in_tmp_dir "ctbar_bis")
-            (AD.unpack_arr
-               (AD.Maths.reshape
-                  (AD.Maths.get_slice [ []; []; [] ] !(ybar.(3)))
-                  [| 2001; n + m |]))
-        in
         AD.Maths.concatenate
           ~axis:2
           [| !(ybar.(1))
