@@ -3,12 +3,13 @@ module AD = Algodiff.D
 
 let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
+let tmp_dir = Cmdargs.(get_string "-tmp" |> force ~usage:"-tmp [tmp dir]")
+let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
 
 module P = struct
   let n = 3
   let m = 3
   let n_steps = 2000
-  let dims = [ 0, 0, 0 ]
   let dt = AD.F 1E-3
   let g = AD.F 9.8
   let mu = AD.F 0.01
@@ -30,25 +31,26 @@ module P = struct
     AD.Maths.(x + (dx * dt))
 
 
-  let dyn_x =
-    let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
+  let dyn_x = None
+
+  (* let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
       AD.Maths.(
         AD.Mat.of_arrays [| [| 1.; 0.; 0. |]; [| 0.; 1.; 0. |]; [| 0.; 0.; 1. |] |]
         + (__a * dt))
       (* let theta = theta |> AD.Maths.sum' in *)
       |> AD.Maths.transpose
     in
-    Some f
+    Some f *)
 
+  let dyn_u = None
 
-  let dyn_u =
-    let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
+  (* let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
       AD.Maths.(__b * dt)
       (* let theta = theta |> AD.Maths.sum' in *)
       |> AD.Maths.transpose
     in
     Some f
-
+ *)
 
   let rl_xx = None
   let rl_ux = None
@@ -92,9 +94,7 @@ let unpack a =
 
 let () =
   let stop prms =
-    let _ = AD.Mat.print prms in
     let x0, theta = unpack prms in
-    let _ = AD.Mat.print x0, AD.Mat.print theta in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -113,32 +113,18 @@ let () =
   in
   let f us prms =
     let x0, theta = unpack prms in
-    let l prms =
-      let _ = Printf.printf "before : %! " in
-      let _ = AD.Mat.print (AD.adjval prms) in
-      let _ = Printf.printf " %! " in
-      let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
-      let _ = Printf.printf "\n after : %!" in
-      let _ = AD.Mat.print (AD.adjval prms) in
-      let _ = Printf.printf "%!" in
-      let fin_taus = AD.primal' fin_taus in
-      (* let fin_taus = AD.Arr.zeros [| P.n_steps; 1; P.n + P.m |] in *)
-      let theta = AD.primal' theta in
-      let _ =
-        Mat.save_txt
-          ~out:"taus_ilqr"
-          (AD.unpack_arr
-             (AD.Maths.reshape
-                fin_taus
-                [| (AD.Arr.shape fin_taus).(0)
-                 ; (AD.Arr.shape fin_taus).(1) * (AD.Arr.shape fin_taus).(2)
-                |]))
-      in
-      M.differentiable_loss ~theta fin_taus
+    let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
+    let _ =
+      Mat.save_txt
+        ~out:(in_tmp_dir "taus_ilqr")
+        (AD.unpack_arr
+           (AD.Maths.reshape
+              fin_taus
+              [| (AD.Arr.shape fin_taus).(0)
+               ; (AD.Arr.shape fin_taus).(1) * (AD.Arr.shape fin_taus).(2)
+              |]))
     in
-    let c = l prms in
-    let _ = Printf.printf "cost %f %!" (AD.unpack_flt c) in
-    AD.F 0.
+    M.differentiable_loss ~theta fin_taus
   in
   let max_steps = 2
   and eta = AD.F 0.0001 in
@@ -155,9 +141,8 @@ let () =
           |> fun m -> Mat.map_rows (fun x -> AD.pack_arr x) m |> Array.to_list
       in
       let dff = df new_us prms in
+      Mat.save_txt ~out:(in_tmp_dir "grads") AD.(unpack_arr dff);
       let new_prms = AD.Maths.(prms - (eta * dff)) in
-      let _ = Mat.save_txt ~out:"grads" (AD.unpack_arr dff) in
-      let _ = Mat.save_txt ~out:"prms" (AD.unpack_arr (AD.primal' prms)) in
       grad_descent (succ k) new_prms)
   in
   grad_descent
