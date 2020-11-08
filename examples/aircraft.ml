@@ -24,7 +24,7 @@ module P = struct
   let c = Mat.of_arrays [| [| 0.; 0.; 1. |] |]
   let __c = AD.pack_arr c
 
-  let dyn ~theta ~k:_k ~x ~u =
+  let dyn ~theta:_ ~k:_k ~x ~u =
     let dx =
       AD.Maths.((__a *@ transpose x) + (__b *@ transpose u)) |> AD.Maths.transpose
     in
@@ -77,11 +77,13 @@ module P = struct
       input
 
 
-  let final_loss ~theta ~k:_k ~x =
+  let final_loss ~theta:_ ~k:_k ~x =
     let y = AD.Maths.(__c *@ transpose x) in
     let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
     let _dy = AD.Maths.(y - y_ref) in
-    AD.Maths.(sum' (sqr theta * sqr _dy))
+    AD.Maths.(sum' (sqr _dy))
+
+  (* AD.Maths.(sum' (sqr theta * sqr _dy)) *)
 end
 
 module M = Dilqr.Default.Make (P)
@@ -102,18 +104,12 @@ let example () =
       if k mod 1 = 0
       then (
         Printf.printf "iter %2i | cost %.6f | pct change %.10f\n%!" k c pct_change;
-        cprev := c;
-        M.trajectory ~theta x0 us |> AD.unpack_arr |> Mat.save_txt ~out:(in_dir "traj1");
-        us
-        |> Array.of_list
-        |> AD.Maths.concatenate ~axis:0
-        |> AD.unpack_arr
-        |> Mat.save_txt ~out:(in_dir "us"));
-      pct_change < 1E-2
+        cprev := c);
+      pct_change < 1E-3
   in
   let f us prms =
     let x0, theta = unpack prms in
-    let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) x0 theta us in
     let _ =
       Mat.save_txt
         ~out:(in_tmp_dir "taus_ilqr")
@@ -124,7 +120,8 @@ let example () =
                ; (AD.Arr.shape fin_taus).(1) * (AD.Arr.shape fin_taus).(2)
               |]))
     in
-    M.differentiable_loss ~theta fin_taus
+    AD.Maths.l2norm' fin_taus
+    (* M.differentiable_loss ~theta fin_taus *)
   in
   let max_steps = 2
   and eta = AD.F 0.0001 in
@@ -153,13 +150,13 @@ let example () =
   |> ignore
 
 
-(*problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them
-  doesn't take into account the theta value?*)
+(* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
 let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    let x0, theta = AD.Mat.zeros 1 3, prms in
+    (* let x0, theta = AD.Mat.zeros 1 3, prms in *)
+    let x0, theta = prms, AD.Mat.ones 1 1 in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -167,33 +164,19 @@ let test_grad () =
       if k mod 1 = 0
       then (
         Printf.printf "iter %2i | cost %.6f | pct change %.10f\n%!" k c pct_change;
-        cprev := c;
-        M.trajectory ~theta x0 us |> AD.unpack_arr |> Mat.save_txt ~out:(in_dir "traj1");
-        us
-        |> Array.of_list
-        |> AD.Maths.concatenate ~axis:0
-        |> AD.unpack_arr
-        |> Mat.save_txt ~out:(in_dir "us"));
+        cprev := c);
       pct_change < 1E-3
   in
   let f us prms =
-    let x0, theta = AD.Mat.zeros 1 3, prms in
-    let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
-    let _ =
-      Mat.save_txt
-        ~out:(in_tmp_dir "taus_ilqr")
-        (AD.unpack_arr
-           (AD.Maths.reshape
-              fin_taus
-              [| (AD.Arr.shape fin_taus).(0)
-               ; (AD.Arr.shape fin_taus).(1) * (AD.Arr.shape fin_taus).(2)
-              |]))
-    in
-    M.differentiable_loss ~theta fin_taus
+    (* let x0, theta = AD.Mat.zeros 1 3, prms in *)
+    let x0, theta = prms, AD.Mat.ones 1 1 in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) x0 theta us in
+    AD.Maths.l2norm' fin_taus
+    (* M.differentiable_loss ~theta fin_taus *)
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
-  let samples, directions = FD.generate_test_samples (1, 1) n_samples in
-  let threshold = 1E-5 in
+  let samples, directions = FD.generate_test_samples (1, 3) n_samples in
+  let threshold = 1E-4 in
   let eps = 1E-5 in
   let b1, k1 =
     FD.Reverse.check ~threshold ~order:`fourth ~eps ~directions ~f:ff samples
@@ -202,5 +185,5 @@ let test_grad () =
 
 
 let () =
-  example ();
+  (* example (); *)
   test_grad ()

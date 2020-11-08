@@ -48,11 +48,18 @@ module Make (P : P) : sig
   val differentiable_loss : theta:AD.t -> AD.t -> AD.t
 
   val learn
-    :  theta:AD.t
+    :  ?linesearch:bool
+    -> theta:AD.t
     -> stop:(int -> AD.t list -> bool)
     -> AD.t
     -> AD.t list
     -> AD.t list
 
-  val ilqr : AD.t -> AD.t -> stop:(int -> AD.t list -> bool) -> AD.t list -> AD.t
+  val ilqr
+    :  ?linesearch:bool
+    -> stop:(int -> AD.t list -> bool)
+    -> AD.t
+    -> AD.t
+    -> AD.t list
+    -> AD.t
 end
