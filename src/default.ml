@@ -165,10 +165,10 @@ module Make (P : P) = struct
     fun alpha ->
       let _, _, uhats =
         List.fold_left
-          (fun (k, xhat, uhats) (x, u, (_K, _k)) ->
-            let dx = AD.Maths.(xhat - x) in
+          (fun (k, xhat, uhats) ((s : Lqr.t), (_K, _k)) ->
+            let dx = AD.Maths.(xhat - s.x) in
             let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
-            let uhat = AD.Maths.(u + du) in
+            let uhat = AD.Maths.(s.u + du) in
             let uhats = uhat :: uhats in
             let xhat = dyn ~theta ~k ~x:xhat ~u:uhat in
             succ k, xhat, uhats)
@@ -218,57 +218,6 @@ module Make (P : P) = struct
         array_taus
     in
     AD.Maths.of_arrays mapped |> AD.Maths.sum'
-
-
-  let g ~theta x0 ustars =
-    let flxx, flx, tape, xf = ffb ~theta x0 ustars in
-    let tau_f = AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] in
-    let taus, fs, big_cs, small_cs, lambdas =
-      let rec backward lambda (taus, fs, big_cs, small_cs, lambdas) = function
-        | Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux } :: tl ->
-          let big_ct =
-            AD.Maths.concatenate
-              ~axis:0
-              [| AD.Maths.concatenate ~axis:1 [| rlxx; AD.Maths.(transpose rlux) |]
-               ; AD.Maths.concatenate ~axis:1 [| rlux; rluu |]
-              |]
-          in
-          let big_ct_top = AD.Maths.get_slice [ []; [ 0; pred n ] ] big_ct in
-          let small_ct = AD.Maths.concatenate ~axis:1 [| rlx; rlu |] in
-          let ft = AD.Maths.concatenate ~axis:0 [| a; b |] in
-          let tau = AD.Maths.concatenate ~axis:1 [| x; u |] in
-          let new_lambda =
-            AD.Maths.((lambda *@ transpose a) + (tau *@ big_ct_top) + rlx)
-          in
-          backward
-            new_lambda
-            ( tau :: taus
-            , ft :: fs
-            , big_ct :: big_cs
-            , small_ct :: small_cs
-            , new_lambda :: lambdas )
-            tl
-        | [] -> taus, fs, big_cs, small_cs, lambdas
-      in
-      let lambda_f =
-        let big_ctf_top = AD.Maths.concatenate ~axis:0 [| flxx; AD.Mat.zeros m n |] in
-        AD.Maths.((tau_f *@ big_ctf_top) + flx)
-      in
-      let small_ctf = AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] in
-      let big_ctf =
-        AD.Maths.concatenate
-          ~axis:0
-          [| AD.Maths.concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |]
-           ; AD.Maths.concatenate ~axis:1 [| AD.Mat.zeros m (n + m) |]
-          |]
-      in
-      backward
-        lambda_f
-        ([ tau_f ], [ AD.Mat.zeros (n + m) n ], [ big_ctf ], [ small_ctf ], [ lambda_f ])
-        tape
-    in
-    let pack x = AD.Maths.stack ~axis:0 (Array.of_list x) in
-    [| pack taus; pack fs; pack big_cs; pack small_cs; pack lambdas |]
 
 
   let learn ?(linesearch = true) ~theta ~stop x0 us =
@@ -328,66 +277,22 @@ module Make (P : P) = struct
     input: [|taus; big_f; big_ct; ct; lambdas |]
     output: taus
     *)
-      let ds ~tau_bar =
+      let ds tau_bar =
         (* recreating tape, pass as argument in the future *)
         let flxx, _, tape, _ = ffb ~theta x0 ustars in
-        (* swap out rlx, rlu with taubars: returns tape again backwards in time *)
         let flx, tape = swap_out_tape tape tau_bar in
-        (* the second LQR to get ctbars which will be backwards in time *)
-        let ctbars, ctbars_xf =
-          let x0 = AD.Mat.zeros 1 n in
-          let acc, _ = Lqr.backward_aug flxx flx tape in
-          let _, xf, taus =
-            List.fold_left
-              (fun (k, xi, taus) (_, _, (_K, _k), a, b) ->
-                let u = AD.Maths.((xi *@ _K) + _k) in
-                let tau = AD.Maths.concatenate ~axis:1 [| xi; u |] in
-                let next_x = AD.Maths.((xi *@ a) + (u *@ b)) in
-                succ k, next_x, tau :: taus)
-              (0, x0, [])
-              acc
-          in
-          taus, xf
+        let acc, _ = Lqr.backward flxx flx tape in
+        let ctbars_xf, ctbars_tape = Lqr.forward acc AD.Mat.(zeros 1 n) in
+        let dlambda0, dlambdas = Lqr.adjoint ctbars_xf flxx flx ctbars_tape in
+        let ctbars =
+          List.map
+            (fun (s : Lqr.t) -> AD.Maths.(concatenate ~axis:1 [| s.x; s.u |]))
+            ctbars_tape
+          |> List.cons AD.Maths.(concatenate ~axis:1 [| ctbars_xf; AD.Mat.zeros 1 m |])
+          |> List.rev
         in
-        let ctbar_f = AD.Maths.concatenate ~axis:1 [| ctbars_xf; AD.Mat.zeros 1 m |] in
-        (* begin computing dlambdas *)
-        fun ~big_fs ~big_cs ->
-          let dlambda_f =
-            let btrans =
-              AD.Maths.get_slice [ [ -1 ]; []; [ 0; pred n ] ] big_cs
-              |> fun x -> AD.Maths.reshape x [| n + m; n |]
-            in
-            let flx =
-              AD.Maths.get_slice [ [ -1 ]; []; [ 0; pred n ] ] tau_bar
-              |> fun x -> AD.Maths.reshape x [| 1; n |]
-            in
-            AD.Maths.((ctbar_f *@ btrans) + flx)
-          in
-          let _, _, dlambdas =
-            List.fold_left
-              (fun (k, dlambda_next, dlambdas) d ->
-                let rlx =
-                  AD.Maths.get_slice [ [ k ]; []; [ 0; pred n ] ] tau_bar
-                  |> fun x -> AD.Maths.reshape x [| 1; n |]
-                in
-                let atrans =
-                  AD.Maths.get_slice [ [ k ]; [ 0; pred n ]; [] ] big_fs
-                  |> fun x -> AD.Maths.reshape x [| n; n |] |> AD.Maths.transpose
-                in
-                let btrans =
-                  AD.Maths.get_slice [ [ k ]; []; [ 0; pred n ] ] big_cs
-                  |> fun x -> AD.Maths.reshape x [| n + m; n |]
-                in
-                let new_lambda =
-                  AD.Maths.((dlambda_next *@ atrans) + (d *@ btrans) + rlx)
-                in
-                pred k, new_lambda, dlambda_next :: dlambdas)
-              (-2, dlambda_f, [ dlambda_f ])
-              (* cbtars backwards in time from above *)
-              ctbars
-          in
-          ( AD.Maths.stack ~axis:0 (Array.of_list List.(rev (ctbar_f :: ctbars)))
-          , AD.Maths.stack ~axis:0 (Array.of_list dlambdas) )
+        ( AD.Maths.stack ~axis:0 (Array.of_list ctbars)
+        , AD.Maths.stack ~axis:0 (Array.of_list (dlambda0 :: dlambdas)) )
       in
       let big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars () =
         let tdl =
@@ -425,7 +330,7 @@ module Make (P : P) = struct
 
           let dr idxs x _ ybar =
             let x = Array.map AD.primal x in
-            let ctbars, dlambdas = ds ~tau_bar:!ybar ~big_fs:x.(1) ~big_cs:x.(2) in
+            let ctbars, dlambdas = ds !ybar in
             (* input bars : 
             0: taus bar; 
             1: big_f bar ; 
@@ -551,7 +456,37 @@ module Make (P : P) = struct
         let ff_arr a =
           let x0, theta = unpack (AD.pack_arr a) in
           let ustars = learn ~linesearch ~theta ~stop x0 us in
-          g ~theta x0 ustars
+          let flxx, flx, tape, xf = ffb ~theta x0 ustars in
+          let lambda0, lambdas = Lqr.adjoint xf flxx flx tape in
+          let lambdas = AD.Maths.stack ~axis:0 (Array.of_list (lambda0 :: lambdas)) in
+          let final_tau = AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] in
+          let final_big_f = AD.Mat.zeros (n + m) n in
+          let final_big_c = AD.Mat.zeros (n + m) (n + m) in
+          let final_c = AD.Mat.zeros 1 (n + m) in
+          let big_taus, big_fs, big_cs, cs =
+            List.fold_left
+              (fun (taus, big_fs, big_cs, cs) (s : Lqr.t) ->
+                let tau = AD.Maths.concatenate ~axis:1 [| s.x; s.u |] in
+                let big_f = AD.Maths.(concatenate ~axis:0 [| s.a; s.b |]) in
+                let big_c =
+                  let row1 =
+                    AD.Maths.(concatenate ~axis:1 [| s.rlxx; transpose s.rlux |])
+                  in
+                  let row2 = AD.Maths.(concatenate ~axis:1 [| s.rlux; s.rluu |]) in
+                  AD.Maths.concatenate ~axis:0 [| row1; row2 |]
+                in
+                let c = AD.Maths.(concatenate ~axis:1 [| s.rlx; s.rlu |]) in
+                tau :: taus, big_f :: big_fs, big_c :: big_cs, c :: cs)
+              ([ final_tau ], [ final_big_f ], [ final_big_c ], [ final_c ])
+              tape
+          in
+          AD.Maths.
+            [| stack ~axis:0 Array.(of_list big_taus)
+             ; stack ~axis:0 Array.(of_list big_fs)
+             ; stack ~axis:0 Array.(of_list big_cs)
+             ; stack ~axis:0 Array.(of_list cs)
+             ; lambdas
+            |]
 
 
         let df _ _ _ = failwith "don't care"

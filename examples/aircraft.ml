@@ -176,7 +176,7 @@ let test_grad () =
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
   let samples, directions = FD.generate_test_samples (1, 3) n_samples in
-  let threshold = 1E-4 in
+  let threshold = 1E-5 in
   let eps = 1E-5 in
   let b1, k1 =
     FD.Reverse.check ~threshold ~order:`fourth ~eps ~directions ~f:ff samples

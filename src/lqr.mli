@@ -13,14 +13,6 @@ type t =
   ; rlux : AD.t
   }
 
-val backward
-  :  AD.t
-  -> AD.t
-  -> t list
-  -> (AD.t * AD.t * (AD.t * AD.t)) list * (float * float)
-
-val backward_aug
-  :  AD.t
-  -> AD.t
-  -> t list
-  -> (AD.t * AD.t * (AD.t * AD.t) * AD.t * AD.t) list * (float * float)
+val backward : AD.t -> AD.t -> t list -> (t * (AD.t * AD.t)) list * (float * float)
+val forward : (t * (AD.t * AD.t)) list -> AD.t -> AD.t * t list
+val adjoint : AD.t -> AD.t -> AD.t -> t list -> AD.t * AD.t list
