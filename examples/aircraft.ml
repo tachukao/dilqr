@@ -77,13 +77,12 @@ module P = struct
       input
 
 
-  let final_loss ~theta:_ ~k:_k ~x =
+  let final_loss ~theta ~k:_k ~x =
     let y = AD.Maths.(__c *@ transpose x) in
     let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
     let _dy = AD.Maths.(y - y_ref) in
-    AD.Maths.(sum' (sqr _dy))
-
-  (* AD.Maths.(sum' (sqr theta * sqr _dy)) *)
+    (* AD.Maths.(sum' (sqr _dy)) *)
+    AD.Maths.(sum' (sqr theta * sqr _dy))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -155,8 +154,8 @@ let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    (* let x0, theta = AD.Mat.zeros 1 3, prms in *)
-    let x0, theta = prms, AD.Mat.ones 1 1 in
+    let x0, theta = AD.Mat.zeros 1 3, prms in
+    (* let x0, theta = prms, AD.Mat.ones 1 1 in *)
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -168,8 +167,8 @@ let test_grad () =
       pct_change < 1E-3
   in
   let f us prms =
-    (* let x0, theta = AD.Mat.zeros 1 3, prms in *)
-    let x0, theta = prms, AD.Mat.ones 1 1 in
+    let x0, theta = AD.Mat.zeros 1 3, prms in
+    (* let x0, theta = prms, AD.Mat.ones 1 1 in *)
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) x0 theta us in
     AD.Maths.l2norm' fin_taus
     (* M.differentiable_loss ~theta fin_taus *)
@@ -185,5 +184,5 @@ let test_grad () =
 
 
 let () =
-  (* example (); *)
+  (* example () *)
   test_grad ()

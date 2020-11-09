@@ -314,7 +314,8 @@ module Make (P : P) = struct
       in
       let big_ct_bar ~taus ~ctbars () =
         let tdt = Bmo.AD.bmm (AD.Maths.transpose ~axis:[| 0; 2; 1 |] ctbars) taus in
-        AD.Maths.(F 0.5 * (tdt + transpose ~axis:[| 0; 2; 1 |] tdt))
+        (* AD.Maths.(F 0.5 * (tdt + transpose ~axis:[| 0; 2; 1 |] tdt)) *)
+        AD.Maths.transpose ~axis:[| 0; 2; 1 |] tdt
       in
       (*check this, should be l(t+1)*)
       build_aiso
@@ -379,7 +380,7 @@ module Make (P : P) = struct
           let f, big_c, small_c =
             if k = n_steps
             then (
-              let f = dyn ~k ~theta ~x ~u:AD.Mat.(zeros 1 m) in
+              let f = AD.Mat.zeros (n + m) n in
               let big_c =
                 let row1 =
                   AD.Maths.concatenate
@@ -433,6 +434,7 @@ module Make (P : P) = struct
     *)
     let theta_b x y ybar =
       let _, theta = unpack x in
+      let ybar = Array.map (fun x -> AD.primal' !x) ybar in
       let taus = AD.primal' !(y.(0)) in
       let theta = AD.primal' theta in
       let theta = AD.make_reverse theta (AD.tag ()) in
@@ -440,10 +442,7 @@ module Make (P : P) = struct
       let y'bar =
         AD.Maths.concatenate
           ~axis:2
-          [| !(ybar.(1))
-           ; !(ybar.(2))
-           ; AD.Maths.transpose ~axis:[| 0; 2; 1 |] !(ybar.(3))
-          |]
+          [| ybar.(1); ybar.(2); AD.Maths.transpose ~axis:[| 0; 2; 1 |] ybar.(3) |]
       in
       AD.reverse_prop y'bar y';
       AD.adjval theta
@@ -461,8 +460,12 @@ module Make (P : P) = struct
           let lambdas = AD.Maths.stack ~axis:0 (Array.of_list (lambda0 :: lambdas)) in
           let final_tau = AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] in
           let final_big_f = AD.Mat.zeros (n + m) n in
-          let final_big_c = AD.Mat.zeros (n + m) (n + m) in
-          let final_c = AD.Mat.zeros 1 (n + m) in
+          let final_big_c =
+            let row1 = AD.Maths.(concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |]) in
+            let row2 = AD.Mat.zeros m (n + m) in
+            AD.Maths.concatenate ~axis:0 [| row1; row2 |]
+          in
+          let final_c = AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] in
           let big_taus, big_fs, big_cs, cs =
             List.fold_left
               (fun (taus, big_fs, big_cs, cs) (s : Lqr.t) ->
