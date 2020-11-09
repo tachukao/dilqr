@@ -7,6 +7,8 @@ type s = theta:AD.t -> k:int -> x:AD.t -> AD.t
 type final_loss = theta:AD.t -> k:int -> x:AD.t -> AD.t
 type running_loss = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
+val print_dim : string -> AD.t -> unit
+
 val forward_for_backward
   :  theta:AD.t
   -> dyn_x:t

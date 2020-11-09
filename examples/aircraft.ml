@@ -63,7 +63,7 @@ module P = struct
   let running_loss =
     let p = AD.F 100. in
     let q = AD.F 1. in
-    fun ~theta ~k:_k ~x ~u ->
+    fun ~theta:_theta ~k:_k ~x ~u ->
       let y = AD.Maths.(__c *@ transpose x) in
       let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
       let dy = AD.Maths.(y - y_ref) in
@@ -71,7 +71,7 @@ module P = struct
         AD.Maths.(
           dt
           * ((p * sum' (transpose dy *@ dy))
-            + sum' (sqr theta * sum' (sqr u))
+            (* + sum' (sqr _theta * sum' (sqr u)) *)
             + sum' (q * sum' (sqr u))))
       in
       input
@@ -154,7 +154,7 @@ let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    let x0, theta = AD.Mat.zeros 1 3, prms in
+    let x0, theta = AD.Mat.gaussian 1 3, prms in
     (* let x0, theta = prms, AD.Mat.ones 1 1 in *)
     let cprev = ref 1E9 in
     fun k us ->
@@ -167,7 +167,7 @@ let test_grad () =
       pct_change < 1E-3
   in
   let f us prms =
-    let x0, theta = AD.Mat.zeros 1 3, prms in
+    let x0, theta = AD.Mat.gaussian 1 3, prms in
     (* let x0, theta = prms, AD.Mat.ones 1 1 in *)
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) x0 theta us in
     AD.Maths.l2norm' fin_taus
