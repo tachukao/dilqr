@@ -9,7 +9,7 @@ let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
 module P = struct
   let n = 3
   let m = 3
-  let n_steps = 2000
+  let n_steps = 300
   let dt = AD.F 1E-3
   let g = AD.F 9.8
   let mu = AD.F 0.01
@@ -24,11 +24,15 @@ module P = struct
   let c = Mat.of_arrays [| [| 0.; 0.; 1. |] |]
   let __c = AD.pack_arr c
 
-  let dyn ~theta:_ ~k:_k ~x ~u =
-    let dx =
-      AD.Maths.((__a *@ transpose x) + (__b *@ transpose u)) |> AD.Maths.transpose
-    in
-    AD.Maths.(x + (dx * dt))
+  let dyn ~theta ~k ~x ~u =
+    if k > n_steps - 3
+    then x
+    else (
+      let theta = AD.Maths.reshape theta [| 3; 3 |] in
+      let dx =
+        AD.Maths.((__a *@ transpose x) + (theta *@ transpose u)) |> AD.Maths.transpose
+      in
+      AD.Maths.(x + (dx * dt)))
 
 
   let dyn_x = None
@@ -63,7 +67,7 @@ module P = struct
   let running_loss =
     let p = AD.F 100. in
     let q = AD.F 1. in
-    fun ~theta:_theta ~k:_k ~x ~u ->
+    fun ~theta:_ ~k:_k ~x ~u ->
       let y = AD.Maths.(__c *@ transpose x) in
       let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
       let dy = AD.Maths.(y - y_ref) in
@@ -71,18 +75,19 @@ module P = struct
         AD.Maths.(
           dt
           * ((p * sum' (transpose dy *@ dy))
-            (* + sum' (sqr _theta * sum' (sqr u)) *)
+            (* + sum' (theta * (transpose dy *@ dy)) *)
+            (* + sum' (sqr theta * sum' (sqr u)) *)
             + sum' (q * sum' (sqr u))))
       in
       input
 
 
-  let final_loss ~theta ~k:_k ~x =
+  let final_loss ~theta:_ ~k:_k ~x =
     let y = AD.Maths.(__c *@ transpose x) in
     let y_ref = AD.Mat.of_arrays [| [| 0.2 |] |] |> AD.Maths.transpose in
     let _dy = AD.Maths.(y - y_ref) in
     (* AD.Maths.(sum' (sqr _dy)) *)
-    AD.Maths.(sum' (sqr theta * sqr _dy))
+    AD.F 0.
 end
 
 module M = Dilqr.Default.Make (P)
@@ -95,7 +100,7 @@ let unpack a =
 
 let example () =
   let stop prms =
-    let x0, theta = unpack prms in
+    let x0, theta = AD.Mat.zeros 1 3, prms in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -107,7 +112,7 @@ let example () =
       pct_change < 1E-3
   in
   let f us prms =
-    let x0, theta = unpack prms in
+    let x0, theta = AD.Mat.zeros 1 3, prms in
     let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) x0 theta us in
     let _ =
       Mat.save_txt
@@ -122,7 +127,7 @@ let example () =
     AD.Maths.l2norm' fin_taus
     (* M.differentiable_loss ~theta fin_taus *)
   in
-  let max_steps = 2
+  let max_steps = 1
   and eta = AD.F 0.0001 in
   let df us = AD.grad (f us) in
   let rec grad_descent k prms =
@@ -141,11 +146,10 @@ let example () =
       let new_prms = AD.Maths.(prms - (eta * dff)) in
       grad_descent (succ k) new_prms)
   in
-  grad_descent
-    0
-    (AD.Maths.concatenate
+  grad_descent 0 (AD.Maths.reshape P.__b [| 1; 9 |])
+  (* (AD.Maths.concatenate
        ~axis:1
-       [| AD.Mat.of_arrays [| [| 0.05; 0.; 2. |] |]; AD.Mat.of_arrays [| [| 1. |] |] |])
+       [| AD.Mat.of_arrays [| [| 0.05; 0.; 2. |] |]; AD.Mat.of_arrays [| [| 1. |] |] |]) *)
   |> ignore
 
 
@@ -154,7 +158,8 @@ let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    let x0, theta = AD.Mat.gaussian 1 3, prms in
+    let _ = Printf.printf "%i %i  %!" (AD.Mat.row_num prms) (AD.Mat.col_num prms) in
+    let x0, theta = AD.Mat.zeros 1 3, prms in
     (* let x0, theta = prms, AD.Mat.ones 1 1 in *)
     let cprev = ref 1E9 in
     fun k us ->
@@ -167,22 +172,22 @@ let test_grad () =
       pct_change < 1E-3
   in
   let f us prms =
-    let x0, theta = AD.Mat.gaussian 1 3, prms in
+    let x0, theta = AD.Mat.zeros 1 3, prms in
     (* let x0, theta = prms, AD.Mat.ones 1 1 in *)
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) x0 theta us in
     AD.Maths.l2norm' fin_taus
     (* M.differentiable_loss ~theta fin_taus *)
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
-  let samples, directions = FD.generate_test_samples (1, 3) n_samples in
-  let threshold = 1E-5 in
+  let samples, directions = FD.generate_test_samples (1, 9) n_samples in
+  let threshold = 3. in
   let eps = 1E-5 in
   let b1, k1 =
-    FD.Reverse.check ~threshold ~order:`fourth ~eps ~directions ~f:ff samples
+    FD.Reverse.check ~threshold ~order:`second ~eps ~directions ~f:ff samples
   in
   Printf.printf "%b, %i\n%!" b1 k1
 
 
 let () =
-  (* example () *)
+  example ();
   test_grad ()

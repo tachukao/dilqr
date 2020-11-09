@@ -368,7 +368,14 @@ module Make (P : P) = struct
         Some [ final_tau ])
       else None
     in
-    let big_fs = [ AD.Mat.zeros (n + m) n ] in
+    let big_fs =
+      [ AD.Maths.concatenate
+          ~axis:0
+          [| dyn_x ~theta ~k:n_steps ~x:xf ~u:(AD.Mat.zeros 1 m)
+           ; dyn_u ~theta ~k:n_steps ~x:xf ~u:(AD.Mat.zeros 1 m)
+          |]
+      ]
+    in
     let big_cs =
       let row1 = AD.Maths.(concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |]) in
       let row2 = AD.Mat.zeros m (n + m) in
