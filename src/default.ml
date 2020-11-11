@@ -4,19 +4,11 @@ open AD.Builder
 
 let tmp_dir = Cmdargs.(get_string "-tmp" |> force ~usage:"-tmp [tmp dir]")
 let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
-let () = ignore in_tmp_dir
 
 type t = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 type s = theta:AD.t -> k:int -> x:AD.t -> AD.t
 type final_loss = theta:AD.t -> k:int -> x:AD.t -> AD.t
 type running_loss = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
-
-let print_dim str x =
-  let shp = AD.Arr.shape x in
-  Printf.printf "%s " str;
-  Array.iter (Printf.printf "%i  ") shp;
-  Printf.printf "\n %!"
-
 
 let forward_for_backward
     ~theta
@@ -77,16 +69,12 @@ module Make (P : P) = struct
   include P
 
   let dyn_u =
-    let default ~theta ~k ~x ~u =
-      AD.jacobian (fun u -> dyn ~theta ~k ~x ~u) u |> AD.Maths.transpose
-    in
+    let default ~theta ~k ~x ~u = AD.jacobian (fun u -> dyn ~theta ~k ~x ~u) u in
     Option.value dyn_u ~default
 
 
   let dyn_x =
-    let default ~theta ~k ~x ~u =
-      AD.jacobian (fun x -> dyn ~theta ~k ~x ~u) x |> AD.Maths.transpose
-    in
+    let default ~theta ~k ~x ~u = AD.jacobian (fun x -> dyn ~theta ~k ~x ~u) x in
     Option.value dyn_x ~default
 
 
@@ -101,21 +89,17 @@ module Make (P : P) = struct
 
 
   let rl_uu =
-    let default ~theta ~k ~x ~u =
-      AD.jacobian (fun u -> rl_u ~theta ~k ~x ~u) u |> AD.Maths.transpose
-    in
+    let default ~theta ~k ~x ~u = AD.jacobian (fun u -> rl_u ~theta ~k ~x ~u) u in
     Option.value rl_uu ~default
 
 
   let rl_xx =
-    let default ~theta ~k ~x ~u =
-      AD.jacobian (fun x -> rl_x ~theta ~k ~x ~u) x |> AD.Maths.transpose
-    in
+    let default ~theta ~k ~x ~u = AD.jacobian (fun x -> rl_x ~theta ~k ~x ~u) x in
     Option.value rl_xx ~default
 
 
   let rl_ux =
-    let default ~theta ~k ~x ~u = AD.jacobian (fun x -> rl_u ~theta ~k ~x ~u) x in
+    let default ~theta ~k ~x ~u = AD.jacobian (fun u -> rl_x ~theta ~k ~x ~u) u in
     Option.value rl_ux ~default
 
 
@@ -125,9 +109,7 @@ module Make (P : P) = struct
 
 
   let fl_xx =
-    let default ~theta ~k ~x =
-      AD.jacobian (fun x -> fl_x ~theta ~k ~x) x |> AD.Maths.transpose
-    in
+    let default ~theta ~k ~x = AD.jacobian (fun x -> fl_x ~theta ~k ~x) x in
     Option.value fl_xx ~default
 
 
@@ -309,27 +291,26 @@ module Make (P : P) = struct
                (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
             (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas)
         in
-        let outpt = AD.Maths.(tdl + dtl) in
-        AD.Maths.concatenate ~axis:0 [| outpt; AD.Arr.zeros [| 1; n + m; n |] |]
+        let output = AD.Maths.(tdl + dtl) in
+        AD.Maths.concatenate ~axis:0 [| output; AD.Arr.zeros [| 1; n + m; n |] |]
       in
       let big_ct_bar ~taus ~ctbars () =
         let tdt = Bmo.AD.bmm (AD.Maths.transpose ~axis:[| 0; 2; 1 |] ctbars) taus in
-        (* tdt *)
-        AD.Maths.(F 0.5 * (tdt + transpose ~axis:[| 0; 2; 1 |] tdt))
-        (* AD.Maths.transpose ~axis:[| 0; 2; 1 |] tdt *)
+        (* AD.Maths.(F 0.5 * (tdt + transpose ~axis:[| 0; 2; 1 |] tdt)) *)
+        AD.Maths.(F 0.5 * tdt)
       in
       build_aiso
         (module struct
           let label = "g2"
 
           let ff a =
-            let x = Array.map AD.primal' a in
+            let x = Array.map AD.primal a in
             x.(0)
 
 
           let df _ _ _ _ = raise (Owl_exception.NOT_IMPLEMENTED "g2 forward mode")
 
-          let dr idxs x _ ybar =
+          let dr idxs x y ybar =
             let x = Array.map AD.primal x in
             let ctbars, dlambdas = ds !ybar in
             (* input bars : 
@@ -343,11 +324,11 @@ module Make (P : P) = struct
                 if idx = 0
                 then !ybar
                 else if idx = 1
-                then big_ft_bar ~taus:x.(0) ~lambdas:x.(4) ~dlambdas ~ctbars ()
+                then big_ft_bar ~taus:y ~lambdas:x.(4) ~dlambdas ~ctbars ()
                 else if idx = 2
-                then big_ct_bar ~taus:x.(0) ~ctbars ()
+                then big_ct_bar ~taus:y ~ctbars ()
                 else if idx = 3
-                then ctbars
+                then AD.(Maths.(F 0.5 * ctbars))
                 else dlambdas) (*not actual lambda gradient but we need this after*)
               idxs
         end : Aiso)
@@ -363,19 +344,10 @@ module Make (P : P) = struct
     let flxx, flx, tape, xf = ffb ~theta x0 ustars in
     let big_taus =
       if compute_all
-      then (
-        let final_tau = AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] in
-        Some [ final_tau ])
+      then Some [ AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] ]
       else None
     in
-    let big_fs =
-      [ AD.Maths.concatenate
-          ~axis:0
-          [| dyn_x ~theta ~k:n_steps ~x:xf ~u:(AD.Mat.zeros 1 m)
-           ; dyn_u ~theta ~k:n_steps ~x:xf ~u:(AD.Mat.zeros 1 m)
-          |]
-      ]
-    in
+    let big_fs = [ AD.Mat.zeros (n + m) n ] in
     let big_cs =
       let row1 = AD.Maths.(concatenate ~axis:1 [| flxx; AD.Mat.zeros n m |]) in
       let row2 = AD.Mat.zeros m (n + m) in
@@ -396,7 +368,7 @@ module Make (P : P) = struct
           let big_c =
             let row1 = AD.Maths.(concatenate ~axis:1 [| s.rlxx; transpose s.rlux |]) in
             let row2 = AD.Maths.(concatenate ~axis:1 [| s.rlux; s.rluu |]) in
-            AD.Maths.concatenate ~axis:0 [| row1; row2 |]
+            AD.Maths.(concatenate ~axis:0 [| row1; row2 |])
           in
           let c = AD.Maths.(concatenate ~axis:1 [| s.rlx; s.rlu |]) in
           taus, big_f :: big_fs, big_c :: big_cs, c :: cs)
@@ -434,8 +406,8 @@ module Make (P : P) = struct
       fun x y ybar ->
         let ybar = Array.map (fun x -> AD.primal' !x) ybar in
         let x0, theta = unpack x in
-        let theta = AD.primal' theta in
-        let x0 = AD.primal' x0 in
+        (* let theta = AD.primal' theta in *)
+        (* let x0 = AD.primal' x0 in *)
         let ustars =
           let ustars =
             AD.primal' !(y.(0))
@@ -451,7 +423,6 @@ module Make (P : P) = struct
           AD.Maths.concatenate
             ~axis:2
             [| ybar.(1); ybar.(2); AD.Maths.transpose ~axis:[| 0; 2; 1 |] ybar.(3) |]
-          |> AD.primal'
         in
         Mat.save_txt
           ~out:(in_tmp_dir "ctbars")
@@ -502,72 +473,71 @@ module Make (P : P) = struct
     let x0 = AD.primal' x0 in
     let theta = AD.primal' theta in
     g2 ~theta x0 ustars all
+end
 
-
-  let _old_g3 ~theta taus =
-    (* 
+(*
+let _old_g3 taus theta =
+  (* 
     inputs: [|x0; theta|] 
     outputs: [| big_f; big_c; ct |]
     *)
-    let n_steps = AD.Arr.(shape taus).(0) in
-    let taus = AD.Maths.split ~axis:0 (Array.make n_steps 1) taus in
-    let _, fs, big_cs, small_cs =
-      Array.fold_left
-        (fun (k, fs, big_cs, small_cs) tau ->
-          let x =
-            AD.Maths.get_slice [ []; []; [ 0; n - 1 ] ] tau
-            |> fun x -> AD.Maths.reshape x [| 1; n |]
-          in
-          let u =
-            AD.Maths.get_slice [ []; []; [ n; -1 ] ] tau
-            |> fun x -> AD.Maths.reshape x [| 1; m |]
-          in
-          let f, big_c, small_c =
-            if k = n_steps
-            then (
-              let f = AD.Mat.zeros (n + m) n in
-              let big_c =
-                let row1 =
-                  AD.Maths.concatenate
-                    ~axis:1
-                    [| fl_xx ~theta ~k ~x; AD.Mat.zeros n (n + m) |]
-                in
-                let row2 = AD.Mat.zeros (n + m) m in
-                AD.Maths.concatenate ~axis:0 [| row1; row2 |]
-              in
-              let small_c =
-                AD.Maths.concatenate ~axis:1 [| fl_x ~theta ~k ~x; AD.Mat.zeros 1 m |]
-              in
-              f, big_c, small_c)
-            else (
-              let f =
-                AD.Maths.concatenate
-                  ~axis:0
-                  [| dyn_x ~theta ~k ~x ~u; dyn_u ~theta ~k ~x ~u |]
-              and big_c =
-                let rlux = rl_ux ~theta ~k ~x ~u in
-                let row1 =
-                  AD.Maths.concatenate
-                    ~axis:1
-                    [| rl_xx ~theta ~k ~x ~u; AD.Maths.transpose rlux |]
-                in
-                let row2 =
-                  AD.Maths.concatenate ~axis:1 [| rlux; rl_uu ~theta ~k ~x ~u |]
-                in
-                AD.Maths.concatenate ~axis:0 [| row1; row2 |]
-              and small_c =
+  let n_steps = AD.Arr.(shape taus).(0) in
+  let taus = AD.Maths.split ~axis:0 (Array.make n_steps 1) taus in
+  let _, fs, big_cs, small_cs =
+    Array.fold_left
+      (fun (k, fs, big_cs, small_cs) tau ->
+        let x =
+          AD.Maths.get_slice [ []; []; [ 0; n - 1 ] ] tau
+          |> fun x -> AD.Maths.reshape x [| 1; n |]
+        in
+        let u =
+          AD.Maths.get_slice [ []; []; [ n; -1 ] ] tau
+          |> fun x -> AD.Maths.reshape x [| 1; m |]
+        in
+        let f, big_c, small_c =
+          if k = n_steps
+          then (
+            let f = AD.Mat.zeros (n + m) n in
+            let big_c =
+              let row1 =
                 AD.Maths.concatenate
                   ~axis:1
-                  [| rl_x ~theta ~k ~x ~u; rl_u ~theta ~k ~x ~u |]
+                  [| fl_xx ~theta ~k ~x; AD.Mat.zeros n (n + m) |]
               in
-              f, big_c, small_c)
-          in
-          succ k, f :: fs, big_c :: big_cs, small_c :: small_cs)
-        (0, [], [], [])
-        taus
-    in
-    let pack x = AD.Maths.stack ~axis:0 (Array.of_list (List.rev x)) in
-    AD.Maths.concatenate
-      ~axis:2
-      [| pack fs; pack big_cs; AD.Maths.(transpose ~axis:[| 0; 2; 1 |] (pack small_cs)) |]
-end
+              let row2 = AD.Mat.zeros (n + m) m in
+              AD.Maths.concatenate ~axis:0 [| row1; row2 |]
+            in
+            let small_c =
+              AD.Maths.concatenate ~axis:1 [| fl_x ~theta ~k ~x; AD.Mat.zeros 1 m |]
+            in
+            f, big_c, small_c)
+          else (
+            let f =
+              AD.Maths.concatenate
+                ~axis:0
+                [| dyn_x ~theta ~k ~x ~u; dyn_u ~theta ~k ~x ~u |]
+            and big_c =
+              let rlux = rl_ux ~theta ~k ~x ~u in
+              let row1 =
+                AD.Maths.concatenate
+                  ~axis:1
+                  [| rl_xx ~theta ~k ~x ~u; AD.Maths.transpose rlux |]
+              in
+              let row2 = AD.Maths.concatenate ~axis:1 [| rlux; rl_uu ~theta ~k ~x ~u |] in
+              AD.Maths.concatenate ~axis:0 [| row1; row2 |]
+            and small_c =
+              AD.Maths.concatenate
+                ~axis:1
+                [| rl_x ~theta ~k ~x ~u; rl_u ~theta ~k ~x ~u |]
+            in
+            f, big_c, small_c)
+        in
+        succ k, f :: fs, big_c :: big_cs, small_c :: small_cs)
+      (0, [], [], [])
+      taus
+  in
+  let pack x = AD.Maths.stack ~axis:0 (Array.of_list (List.rev x)) in
+  AD.Maths.concatenate
+    ~axis:2
+    [| pack fs; pack big_cs; AD.Maths.(transpose ~axis:[| 0; 2; 1 |] (pack small_cs)) |]
+*)

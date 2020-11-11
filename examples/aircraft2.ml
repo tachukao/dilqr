@@ -9,7 +9,7 @@ let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
 module P = struct
   let n = 3
   let m = 3
-  let n_steps = 1000
+  let n_steps = 2000
   let dt = AD.F 1E-3
   let g = AD.F 9.8
   let mu = AD.F 0.01
@@ -24,73 +24,29 @@ module P = struct
   let c = Mat.of_arrays [| [| 0.; 0.; 1. |] |]
   let __c = AD.pack_arr c
 
-  let dyn ~theta:_ ~k:_ ~x ~u =
-    (* let __a = AD.Maths.(__a * theta) in *)
+  let dyn ~theta ~k:_ ~x ~u =
+    let __a = AD.Maths.(__a * theta) in
     let dx = AD.Maths.((x *@ __a) + u) in
     AD.Maths.(x + (dx * dt))
 
 
   let dyn_x =
     Some
-      (fun ~theta:_ ~k:_ ~x:_ ~u:_ ->
-        (* let __a = AD.Maths.(__a * theta) in *)
+      (fun ~theta ~k:_ ~x:_ ~u:_ ->
+        let __a = AD.Maths.(__a * theta) in
         AD.Maths.((__a * dt) + AD.Mat.eye n))
 
 
   let dyn_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(dt * AD.Mat.(eye n)))
-
-  let rl_xx =
-    Some
-      (fun ~theta ~k:_ ~x:_ ~u:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * diagm theta))
-
-
+  let rl_xx = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))
   let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.(zeros m n))
-
-  let rl_uu =
-    Some
-      (fun ~theta ~k:_ ~x:_ ~u:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * diagm theta))
-
-
-  let rl_u =
-    Some
-      (fun ~theta ~k:_ ~x:_ ~u ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * theta * u))
-
-
-  let rl_x =
-    Some
-      (fun ~theta ~k:_ ~x ~u:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * theta * x))
-
-
-  let fl_xx =
-    Some
-      (fun ~theta ~k:_ ~x:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * diagm theta))
-
-
-  let fl_x =
-    Some
-      (fun ~theta ~k:_ ~x ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * theta * x))
-
-
-  let running_loss ~theta ~k:_k ~x ~u =
-    let theta = AD.Maths.sqr theta in
-    AD.Maths.(sum' (sqr x *@ transpose theta) + sum' (u * theta * u))
-
-
-  let final_loss ~theta ~k:_k ~x =
-    let theta = AD.Maths.sqr theta in
-    AD.Maths.(sum' (theta * x * x))
+  let rl_uu = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.eye m))
+  let rl_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u -> AD.Maths.(F 2. * u))
+  let rl_x = Some (fun ~theta:_ ~k:_ ~x ~u:_ -> AD.Maths.(F 2. * x))
+  let fl_xx = Some (fun ~theta:_ ~k:_ ~x:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))
+  let fl_x = Some (fun ~theta:_ ~k:_ ~x -> AD.Maths.(F 2. * x))
+  let running_loss ~theta:_ ~k:_k ~x ~u = AD.Maths.(sum' (sqr x) + sum' (u * u))
+  let final_loss ~theta:_ ~k:_k ~x = AD.Maths.(sum' (x * x))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -149,7 +105,11 @@ let example () =
       let new_prms = AD.Maths.(prms - (eta * dff)) in
       grad_descent (succ k) new_prms)
   in
-  grad_descent 0 (AD.Maths.reshape P.__b [| 1; 9 |]) |> ignore
+  grad_descent 0 (AD.Maths.reshape P.__b [| 1; 9 |])
+  (* (AD.Maths.concatenate
+       ~axis:1
+       [| AD.Mat.of_arrays [| [| 0.05; 0.; 2. |] |]; AD.Mat.of_arrays [| [| 1. |] |] |]) *)
+  |> ignore
 
 
 (* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
