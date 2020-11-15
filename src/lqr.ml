@@ -78,7 +78,7 @@ let adjoint xf flxx flx tape =
   List.fold_left
     (fun (lamb, lambs) { x; u; a; b = _; rlx; rlu = _; rlxx; rluu = _; rlux } ->
       let lambs = lamb :: lambs in
-      let lamb = AD.Maths.((lamb *@ transpose a) + (x *@ rlxx) + rlx + u *@ rlux) in
+      let lamb = AD.Maths.((lamb *@ transpose a) + (x *@ rlxx) + rlx + (u *@ rlux)) in
       lamb, lambs)
     (lambf, [])
     tape
