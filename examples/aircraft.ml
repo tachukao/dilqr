@@ -23,74 +23,61 @@ module P = struct
   let __a, __b = AD.pack_arr a, AD.pack_arr b
   let c = Mat.of_arrays [| [| 0.; 0.; 1. |] |]
   let __c = AD.pack_arr c
+  let alpha = AD.Mat.ones 1 3
 
   let dyn ~theta:_ ~k:_ ~x ~u =
+    (* let theta_dyn = AD.Maths.get_slice [ []; [ 3; -1 ] ] theta in
+    let theta = AD.Maths.reshape theta_dyn [| 3; 3 |] in *)
     (* let __a = AD.Maths.(__a * theta) in *)
     let dx = AD.Maths.((x *@ __a) + u) in
     AD.Maths.(x + (dx * dt))
 
 
-  let dyn_x =
-    Some
-      (fun ~theta:_ ~k:_ ~x:_ ~u:_ ->
+  let dyn_x = None
+
+  (* Some
+      (fun ~theta ~k:_ ~x:_ ~u:_ ->
+        let theta_dyn = AD.Maths.get_slice [ []; [ 3; -1 ] ] theta in
+        let theta = AD.Maths.reshape theta_dyn [| 3; 3 |] in
         (* let __a = AD.Maths.(__a * theta) in *)
-        AD.Maths.((__a * dt) + AD.Mat.eye n))
+        AD.Maths.((theta * dt) + AD.Mat.eye n)) *)
 
+  let dyn_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(dt * AD.Mat.eye n))
+  let rl_xx = None
 
-  let dyn_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(dt * AD.Mat.(eye n)))
-
-  let rl_xx =
-    Some
-      (fun ~theta ~k:_ ~x:_ ~u:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * diagm theta))
-
-
+  (* let rl_xx = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * diagm alpha)) *)
   let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.(zeros m n))
+  let rl_uu = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * diagm alpha))
+  let rl_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u -> AD.Maths.(F 2. * alpha * u))
+  let rl_x = None
 
-  let rl_uu =
-    Some
-      (fun ~theta ~k:_ ~x:_ ~u:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * diagm theta))
+  (* let rl_x = Some (fun ~theta:_ ~k:_ ~x ~u:_ -> AD.Maths.(F 2. * alpha * x)) *)
 
+  let fl_xx = None
 
-  let rl_u =
-    Some
-      (fun ~theta ~k:_ ~x:_ ~u ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * theta * u))
-
-
-  let rl_x =
-    Some
-      (fun ~theta ~k:_ ~x ~u:_ ->
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * theta * x))
-
-
-  let fl_xx =
-    Some
+  (* Some
       (fun ~theta ~k:_ ~x:_ ->
+        let theta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
         let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * diagm theta))
+        AD.Maths.(F 0. * diagm theta)) *)
 
+  let fl_x = None
 
-  let fl_x =
-    Some
+  (* Some
       (fun ~theta ~k:_ ~x ->
+        let theta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
         let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 2. * theta * x))
-
+        AD.Maths.(F 0. * theta * x)) *)
 
   let running_loss ~theta ~k:_k ~x ~u =
-    let theta = AD.Maths.sqr theta in
-    AD.Maths.(sum' (sqr x *@ transpose theta) + sum' (u * theta * u))
+    let beta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
+    AD.Maths.(sum' (sqr (x *@ transpose beta)) + sum' (u * alpha * u))
 
 
   let final_loss ~theta ~k:_k ~x =
+    let theta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
     let theta = AD.Maths.sqr theta in
-    AD.Maths.(sum' (theta * x * x))
+    AD.Maths.(F 1. * sum' (sqr theta) * sum' (x * x))
 end
 
 module M = Dilqr.Default.Make (P)
