@@ -274,15 +274,15 @@ module Make (P : P) = struct
           Bmo.AD.bmm
             (AD.Maths.transpose
                ~axis:[| 0; 2; 1 |]
-               (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] taus))
-            (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] dlambdas)
+               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] taus))
+            (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] dlambdas)
         in
         let dtl =
           Bmo.AD.bmm
             (AD.Maths.transpose
                ~axis:[| 0; 2; 1 |]
-               (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] ctbars))
-            (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] lambdas)
+               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
+            (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas)
         in
         let output = AD.Maths.(tdl + dtl) in
         AD.Maths.concatenate ~axis:0 [| output; AD.Arr.zeros [| 1; n + m; n |] |]
