@@ -277,41 +277,12 @@ module Make (P : P) = struct
                (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] taus))
             (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] dlambdas)
         in
-        let _ =
-          Mat.save_txt
-            ~out:"tmp/dlambdas"
-            (AD.unpack_arr (AD.Maths.reshape dlambdas [| n_steps + 1; n |]));
-          Mat.save_txt
-            ~out:"tmp/lambdas"
-            (AD.unpack_arr (AD.Maths.reshape lambdas [| n_steps + 1; n |]));
-          Mat.save_txt
-            ~out:"tmp/dtaus"
-            (AD.unpack_arr (AD.Maths.reshape ctbars [| n_steps + 1; n + m |]));
-          Mat.save_txt
-            ~out:"tmp/taus"
-            (AD.unpack_arr (AD.Maths.reshape taus [| n_steps + 1; n + m |]))
-        in
         let dtl =
-          AD.Maths.transpose
-            ~axis:[| 0; 2; 1 |]
-            (Bmo.AD.bmm
-               (AD.Maths.transpose
-                  ~axis:[| 0; 2; 1 |]
-                  (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas))
-               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
-          (* Bmo.AD.bmm
+          Bmo.AD.bmm
             (AD.Maths.transpose
-               ~axis:[| 0; 2; 1 |] 
+               ~axis:[| 0; 2; 1 |]
                (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
-            (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas) *)
-        in
-        let _ =
-          Mat.save_txt
-            ~out:"tmp/dtl"
-            (AD.unpack_arr
-               (AD.Maths.reshape
-                  (AD.Maths.get_slice [ [ 0 ]; []; [] ] dtl)
-                  [| n + m; n |]))
+            (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas)
         in
         let output = AD.Maths.(tdl + (AD.F 0.5 * dtl)) in
         let _ =

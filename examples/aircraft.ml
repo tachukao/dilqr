@@ -9,7 +9,11 @@ let in_dir = Printf.sprintf "%s/%s" dir
 module P = struct
   let n = 3
   let m = 3
+<<<<<<< HEAD
   let n_steps = 200
+=======
+  let n_steps = 500
+>>>>>>> 6a6f7670fdf4e777c134e47149ad429d2f755399
   let dt = AD.F 1E-3
   let g = AD.F 9.8
   let mu = AD.F 0.01
@@ -159,7 +163,7 @@ let test_grad () =
     FD.Reverse.check
       ~verbose:true
       ~threshold
-      ~order:`fourth
+      ~order:`second
       ~eps
       ~directions
       ~f:ff
