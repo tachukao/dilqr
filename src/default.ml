@@ -285,11 +285,6 @@ module Make (P : P) = struct
             (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas)
         in
         let output = AD.Maths.(tdl + (AD.F 0.5 * dtl)) in
-        let _ =
-          AD.Maths.reshape (AD.Maths.get_slice [ []; [ 0 ]; [] ] output) [| n_steps; n |]
-          |> AD.unpack_arr
-          |> Mat.save_txt ~out:"fts"
-        in
         AD.Maths.concatenate ~axis:0 [| output; AD.Arr.zeros [| 1; n + m; n |] |]
       in
       let big_ct_bar ~taus ~ctbars () =
