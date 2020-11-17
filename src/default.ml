@@ -239,7 +239,7 @@ module Make (P : P) = struct
                 (AD.Maths.get_slice [ [ k ]; []; [ n; -1 ] ] tau_bar)
                 [| 1; m |]
             in
-            succ k, Lqr.{ s with rlx; rlu } :: tape)
+            succ k, Lqr.{ s with rlu; rlx } :: tape)
           (0, [])
           (* the tape is backward in time hence we reverse it *)
           (List.rev tape)
@@ -274,17 +274,51 @@ module Make (P : P) = struct
           Bmo.AD.bmm
             (AD.Maths.transpose
                ~axis:[| 0; 2; 1 |]
-               (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] taus))
-            (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] dlambdas)
+               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] taus))
+            (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] dlambdas)
+        in
+        let _ =
+          Mat.save_txt
+            ~out:"tmp/dlambdas"
+            (AD.unpack_arr (AD.Maths.reshape dlambdas [| n_steps + 1; n |]));
+          Mat.save_txt
+            ~out:"tmp/lambdas"
+            (AD.unpack_arr (AD.Maths.reshape lambdas [| n_steps + 1; n |]));
+          Mat.save_txt
+            ~out:"tmp/dtaus"
+            (AD.unpack_arr (AD.Maths.reshape ctbars [| n_steps + 1; n + m |]));
+          Mat.save_txt
+            ~out:"tmp/taus"
+            (AD.unpack_arr (AD.Maths.reshape taus [| n_steps + 1; n + m |]))
         in
         let dtl =
-          Bmo.AD.bmm
+          AD.Maths.transpose
+            ~axis:[| 0; 2; 1 |]
+            (Bmo.AD.bmm
+               (AD.Maths.transpose
+                  ~axis:[| 0; 2; 1 |]
+                  (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas))
+               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
+          (* Bmo.AD.bmm
             (AD.Maths.transpose
-               ~axis:[| 0; 2; 1 |]
-               (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] ctbars))
-            (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] lambdas)
+               ~axis:[| 0; 2; 1 |] 
+               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
+            (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas) *)
         in
-        let output = AD.Maths.(tdl + dtl) in
+        let _ =
+          Mat.save_txt
+            ~out:"tmp/dtl"
+            (AD.unpack_arr
+               (AD.Maths.reshape
+                  (AD.Maths.get_slice [ [ 0 ]; []; [] ] dtl)
+                  [| n + m; n |]))
+        in
+        let output = AD.Maths.(tdl + (AD.F 0.5 * dtl)) in
+        let _ =
+          AD.Maths.reshape (AD.Maths.get_slice [ []; [ 0 ]; [] ] output) [| n_steps; n |]
+          |> AD.unpack_arr
+          |> Mat.save_txt ~out:"fts"
+        in
         AD.Maths.concatenate ~axis:0 [| output; AD.Arr.zeros [| 1; n + m; n |] |]
       in
       let big_ct_bar ~taus ~ctbars () =
@@ -304,7 +338,7 @@ module Make (P : P) = struct
             List.map
               (fun idx ->
                 if idx = 0
-                then AD.Maths.(F 0.5 * big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars ())
+                then AD.Maths.(F 1. * big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars ())
                 else if idx = 1
                 then AD.Maths.(F 0.5 * big_ct_bar ~taus ~ctbars ())
                 else if idx = 2
@@ -356,6 +390,17 @@ module Make (P : P) = struct
   let ilqr ?(linesearch = true) ~stop ~us x0 theta =
     let ustars = learn ~linesearch ~theta:(AD.primal' theta) ~stop AD.(primal' x0) us in
     let taus, big_fs, big_cs, cs, lambdas = g1 ~x0:(AD.primal' x0) ~ustars theta in
+    let _ =
+      Mat.save_txt
+        ~out:"tmp/taus_ilqr"
+        (AD.unpack_arr (AD.Arr.reshape taus [| n_steps + 1; n + m |]));
+      Mat.save_txt
+        ~out:"tmp/ustars"
+        (AD.unpack_arr
+           (AD.Maths.concatenate
+              ~axis:0
+              (Array.of_list (List.map (fun x -> AD.Maths.reshape x [| 1; m |]) ustars))))
+    in
     let inp = [| big_fs; big_cs; cs; x0 |] in
     g2
       ~lambdas:(AD.primal' lambdas)
