@@ -284,7 +284,7 @@ module Make (P : P) = struct
                (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
             (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas)
         in
-        let output = AD.Maths.(tdl + (AD.F 0.5 * dtl)) in
+        let output = AD.Maths.(tdl + dtl) in
         AD.Maths.concatenate ~axis:0 [| output; AD.Arr.zeros [| 1; n + m; n |] |]
       in
       let big_ct_bar ~taus ~ctbars () =
@@ -301,16 +301,18 @@ module Make (P : P) = struct
           let dr idxs x _ ybar =
             let x0 = x.(3) in
             let ctbars, dlambdas = ds ~x0 ~tau_bar:!ybar in
+            (* this works but we don't know why  *)
+            let ctbars = AD.Maths.(F 0.5 * ctbars) in
             List.map
               (fun idx ->
                 if idx = 0
-                then AD.Maths.(F 1. * big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars ())
+                then big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars ()
                 else if idx = 1
-                then AD.Maths.(F 0.5 * big_ct_bar ~taus ~ctbars ())
+                then big_ct_bar ~taus ~ctbars ()
                 else if idx = 2
-                then AD.Maths.(F 0.5 * ctbars)
+                then ctbars
                 else (
-                  let g = AD.Maths.(get_slice [ [ 0 ] ] dlambdas) in
+                  let g = AD.Maths.(get_slice [ [ 1 ] ] dlambdas) in
                   AD.Maths.reshape g [| 1; -1 |]))
               idxs
         end : Aiso)
@@ -353,21 +355,13 @@ module Make (P : P) = struct
     taus, big_fs, big_cs, cs, lambdas
 
 
-  let ilqr ?(linesearch = true) ~stop ~us x0 theta =
-    let ustars = learn ~linesearch ~theta:(AD.primal' theta) ~stop AD.(primal' x0) us in
-    let taus, big_fs, big_cs, cs, lambdas = g1 ~x0:(AD.primal' x0) ~ustars theta in
-    let _ =
-      Mat.save_txt
-        ~out:"tmp/taus_ilqr"
-        (AD.unpack_arr (AD.Arr.reshape taus [| n_steps + 1; n + m |]));
-      Mat.save_txt
-        ~out:"tmp/ustars"
-        (AD.unpack_arr
-           (AD.Maths.concatenate
-              ~axis:0
-              (Array.of_list (List.map (fun x -> AD.Maths.reshape x [| 1; m |]) ustars))))
+  let ilqr ?(linesearch = true) ~stop ~us ~x0 ~theta () =
+    let ustars =
+      learn ~linesearch ~theta:(AD.primal' theta) ~stop AD.(primal' x0) us
+      |> List.map AD.primal'
     in
-    let inp = [| big_fs; big_cs; cs; x0 |] in
+    let taus, big_fs, big_cs, cs, lambdas = g1 ~x0:(AD.primal' x0) ~ustars theta in
+    let inp = [| big_fs; big_cs; cs; AD.primal' x0 |] in
     g2
       ~lambdas:(AD.primal' lambdas)
       ~taus:(AD.primal' taus)
