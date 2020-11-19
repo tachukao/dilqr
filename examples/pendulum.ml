@@ -7,19 +7,19 @@ let in_dir = Printf.sprintf "%s/%s" dir
 module P = struct
   let n = 2
   let m = 2
-  let n_steps = 2000
+  let n_steps = 100
   let dims = [ 0, 0 ]
   let dt = AD.F 1E-3
   let g = AD.F 9.8
   let mu = AD.F 0.01
 
-  let dyn ~theta:_ ~k:_k ~x ~u =
+  let dyn ~theta ~k:_k ~x ~u =
     (* let theta = theta |> AD.Maths.sum' in *)
     let x1 = AD.Maths.get_slice [ []; [ 0 ] ] x in
     let x2 = AD.Maths.get_slice [ []; [ 1 ] ] x in
     let b = AD.pack_arr (Mat.of_arrays [| [| 1.; 0. |] |] |> Mat.transpose) in
     let sx1 = AD.Maths.sin x1 in
-    let dx2 = AD.Maths.((g * sx1) - (mu * x2) + (u *@ b)) in
+    let dx2 = AD.Maths.((g * sx1) - (sum' theta * x2) + (u *@ b)) in
     let dx = [| x2; dx2 |] |> AD.Maths.concatenate ~axis:1 in
     AD.Maths.(x + (dx * dt))
 
@@ -163,7 +163,7 @@ let test =
   let n_samples = 1 in
   let stop prms =
     let _ = AD.Mat.print prms in
-    let x0, theta = unpack prms in
+    let x0, theta = AD.Mat.ones 1 2, prms in
     let _ = AD.Mat.print x0, AD.Mat.print theta in
     let cprev = ref 1E9 in
     fun k us ->
@@ -179,11 +179,11 @@ let test =
         |> AD.Maths.concatenate ~axis:0
         |> AD.unpack_arr
         |> Mat.save_txt ~out:(in_dir "us"));
-      pct_change < 1E-8
+      pct_change < 1E-4
   in
   let f us prms =
-    let x0, theta = unpack prms in
-    let fin_taus = M.ilqr x0 theta ~stop:(stop prms) us in
+    let x0, theta = AD.Mat.ones 1 2, prms in
+    let fin_taus = M.ilqr ~linesearch:true ~x0 ~theta ~stop:(stop prms) ~us () in
     let _ =
       Mat.save_txt
         ~out:"taus_ilqr"

@@ -9,11 +9,7 @@ let in_dir = Printf.sprintf "%s/%s" dir
 module P = struct
   let n = 3
   let m = 3
-<<<<<<< HEAD
   let n_steps = 200
-=======
-  let n_steps = 500
->>>>>>> 6a6f7670fdf4e777c134e47149ad429d2f755399
   let dt = AD.F 1E-3
   let g = AD.F 9.8
   let mu = AD.F 0.01
@@ -81,9 +77,9 @@ let unpack a =
   x0, theta
 
 
-(* let example () =
+let example () =
   let stop prms =
-    let x0, theta = unpack prms in
+    let x0, theta = AD.Mat.ones 1 3, prms in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -96,8 +92,8 @@ let unpack a =
   in
   let f us prms =
     (* let x0, theta = AD.Mat.ones 1 3, prms in *)
-    let x0, theta = unpack prms in
-    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) x0 theta us in
+    let x0, theta = AD.Mat.ones 1 3, prms in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     let _ =
       Mat.save_txt
         ~out:(in_tmp_dir "taus_ilqr")
@@ -130,7 +126,8 @@ let unpack a =
       let new_prms = AD.Maths.(prms - (eta * dff)) in
       grad_descent (succ k) new_prms)
   in
-  grad_descent 0 (AD.Maths.reshape P.__b [| 1; 9 |]) |> ignore *)
+  grad_descent 0 AD.Maths.(F 0.1 * AD.Mat.gaussian 1 18) |> ignore
+
 
 (* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
 let test_grad () =
@@ -152,7 +149,7 @@ let test_grad () =
   let f us prms =
     let x0, theta = AD.Mat.ones 1 3, prms in
     (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us x0 theta in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     AD.Maths.sum fin_taus
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
@@ -173,7 +170,7 @@ let test_grad () =
 
 
 let () =
-  (* example (); *)
+  example ();
   test_grad ()
 
 (* 

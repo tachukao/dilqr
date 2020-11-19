@@ -26,9 +26,9 @@ let backward flxx flx tape =
         let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        if not (Owl.Linalg.D.is_posdef (AD.unpack_arr quu))
+        if not (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu))
         then (
-          Printf.printf "NOT POSDEF\n%!";
+          Printf.printf " NOT POSDEF. mu = %f \n%!" mu;
           backward
             (Regularisation.increase (delta, mu))
             (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
@@ -47,10 +47,7 @@ let backward flxx flx tape =
           let acc = (s, (_K, _k)) :: acc in
           let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
           let df2 = AD.Maths.(df2 + sum' (_k *@ transpose quu)) in
-          backward
-            (Regularisation.decrease (delta, mu))
-            (k - 1, vxx, vx, df1, df2, acc)
-            tl)
+          backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc) tl)
       | [] -> k, vxx, vx, df1, df2, acc
     in
     backward (1., 0.) (kf - 1, flxx, flx, AD.F 0., AD.F 0., []) tape
