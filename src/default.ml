@@ -33,6 +33,8 @@ let forward_for_backward
         and rlxx = rl_xx ~theta ~k ~x ~u
         and rluu = rl_uu ~theta ~k ~x ~u
         and rlux = rl_ux ~theta ~k ~x ~u in
+        let rlx = AD.Maths.(rlx - (F 0. * (x *@ rlxx)))
+        and rlu = AD.Maths.(rlu - (F 0. * (u *@ rluu))) in
         let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux } in
         let x = dyn ~theta ~k ~x ~u in
         succ k, x, s :: tape)
@@ -154,7 +156,7 @@ module Make (P : P) = struct
           (0, x0, [])
           acc
       in
-      let df = (alpha *. df1) +. (0.5 *. alpha *. alpha *. df2) in
+      let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
       List.rev uhats, df
 
 
@@ -230,9 +232,10 @@ module Make (P : P) = struct
         List.fold_left
           (fun (k, tape) s ->
             let rlx =
-              AD.Maths.reshape
-                (AD.Maths.get_slice [ [ k ]; []; [ 0; pred n ] ] tau_bar)
-                [| 1; n |]
+              AD.Maths.(
+                reshape
+                  (AD.Maths.get_slice [ [ k ]; []; [ 0; pred n ] ] tau_bar)
+                  [| 1; n |])
             in
             let rlu =
               AD.Maths.reshape
@@ -258,7 +261,7 @@ module Make (P : P) = struct
         let flx, tape = swap_out_tape tape tau_bar in
         let acc, _ = Lqr.backward flxx flx tape in
         let ctbars_xf, ctbars_tape = Lqr.forward acc AD.Mat.(zeros 1 n) in
-        let dlambda0, dlambdas = Lqr.adjoint ctbars_xf flxx flx ctbars_tape in
+        let dlambda0, dlambdas = Lqr.adjoint_back ctbars_xf flxx flx ctbars_tape in
         let ctbars =
           List.map
             (fun (s : Lqr.t) -> AD.Maths.(concatenate ~axis:1 [| s.x; s.u |]))
@@ -270,6 +273,14 @@ module Make (P : P) = struct
         , AD.Maths.stack ~axis:0 (Array.of_list (dlambda0 :: dlambdas)) )
       in
       let big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars () =
+        let _ =
+          Mat.save_txt
+            ~out:"dlambdas"
+            (AD.unpack_arr
+               (AD.Maths.reshape
+                  dlambdas
+                  [| (AD.Arr.shape dlambdas).(0); (AD.Arr.shape dlambdas).(2) |]))
+        in
         let tdl =
           Bmo.AD.bmm
             (AD.Maths.transpose
@@ -281,16 +292,15 @@ module Make (P : P) = struct
           Bmo.AD.bmm
             (AD.Maths.transpose
                ~axis:[| 0; 2; 1 |]
-               (AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] ctbars))
+               AD.Maths.(get_slice [ [ 0; -2 ]; []; [] ] ctbars))
             (AD.Maths.get_slice [ [ 1; -1 ]; []; [] ] lambdas)
         in
-        let output = AD.Maths.(tdl + dtl) in
+        let output = AD.Maths.((F 1. * tdl) + (AD.F 1. * dtl)) in
         AD.Maths.concatenate ~axis:0 [| output; AD.Arr.zeros [| 1; n + m; n |] |]
       in
       let big_ct_bar ~taus ~ctbars () =
         let tdt = Bmo.AD.bmm (AD.Maths.transpose ~axis:[| 0; 2; 1 |] ctbars) taus in
-        (* AD.Maths.(F 0.5 * (tdt + transpose ~axis:[| 0; 2; 1 |] tdt)) *)
-        tdt
+        AD.Maths.(F 0.5 * (tdt + transpose ~axis:[| 0; 2; 1 |] tdt))
       in
       build_aiso
         (module struct
@@ -302,7 +312,7 @@ module Make (P : P) = struct
             let x0 = x.(3) in
             let ctbars, dlambdas = ds ~x0 ~tau_bar:!ybar in
             (* this works but we don't know why  *)
-            let ctbars = AD.Maths.(F 0.5 * ctbars) in
+            let ctbars = AD.Maths.(F 1. * ctbars) in
             List.map
               (fun idx ->
                 if idx = 0
@@ -310,9 +320,9 @@ module Make (P : P) = struct
                 else if idx = 1
                 then big_ct_bar ~taus ~ctbars ()
                 else if idx = 2
-                then ctbars
+                then AD.Maths.(F 1. * ctbars)
                 else (
-                  let g = AD.Maths.(get_slice [ [ 1 ] ] dlambdas) in
+                  let g = AD.Maths.(get_slice [ [ 0 ] ] dlambdas) in
                   AD.Maths.reshape g [| 1; -1 |]))
               idxs
         end : Aiso)
@@ -329,7 +339,10 @@ module Make (P : P) = struct
       let row2 = AD.Mat.zeros m (n + m) in
       [ AD.Maths.concatenate ~axis:0 [| row1; row2 |] ]
     in
-    let cs = [ AD.Maths.concatenate ~axis:1 [| flx; AD.Mat.zeros 1 m |] ] in
+    let cs =
+      [ AD.Maths.concatenate ~axis:1 [| AD.Maths.(flx - (xf *@ flxx)); AD.Mat.zeros 1 m |]
+      ]
+    in
     let big_taus, big_fs, big_cs, cs =
       List.fold_left
         (fun (taus, big_fs, big_cs, cs) (s : Lqr.t) ->
@@ -343,7 +356,12 @@ module Make (P : P) = struct
             let row2 = AD.Maths.(concatenate ~axis:1 [| s.rlux; s.rluu |]) in
             AD.Maths.(concatenate ~axis:0 [| row1; row2 |])
           in
-          let c = AD.Maths.(concatenate ~axis:1 [| s.rlx; s.rlu |]) in
+          let c =
+            AD.Maths.(
+              concatenate
+                ~axis:1
+                [| s.rlx - (F 1. * (s.x *@ s.rlxx)); s.rlu - (F 1. * (s.u *@ s.rluu)) |])
+          in
           taus, big_f :: big_fs, big_c :: big_cs, c :: cs)
         (big_taus, big_fs, big_cs, cs)
         tape
