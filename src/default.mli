@@ -58,11 +58,11 @@ module Make (P : P) : sig
   val ilqr
     :  ?linesearch:bool
     -> stop:(int -> AD.t list -> bool)
-    -> us:AD.t list 
-    -> x0:AD.t  
+    -> us:AD.t list
+    -> x0:AD.t
     -> theta:AD.t
     -> unit
     -> AD.t
 
-  val g1 : x0:AD.t -> ustars:AD.t list -> AD.t -> AD.t * AD.t * AD.t * AD.t * AD.t
+  val g1 : x0:AD.t -> ustars:AD.t list -> AD.t -> AD.t * AD.t * AD.t * AD.t * AD.t * AD.t
 end

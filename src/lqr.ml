@@ -11,6 +11,7 @@ type t =
   ; rlxx : AD.t
   ; rluu : AD.t
   ; rlux : AD.t
+  ; dynamics : k:int -> x:AD.t -> u:AD.t -> AD.t
   }
 
 let backward flxx flx tape =
@@ -18,7 +19,7 @@ let backward flxx flx tape =
   let kf = List.length tape in
   let k, _, _, df1, df2, acc =
     let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc) = function
-      | ({ x = _; u = _; a; b; rlx; rlu; rlxx; rluu; rlux } as s) :: tl ->
+      | ({ x = _; u = _; a; b; rlx; rlu; rlxx; rluu; rlux; dynamics = _ } as s) :: tl ->
         let at = AD.Maths.transpose a in
         let bt = AD.Maths.transpose b in
         let qx = AD.Maths.(rlx + (vx *@ at)) in
@@ -63,6 +64,7 @@ let forward acc x0 =
         let u = AD.Maths.((x *@ _K) + _k) in
         let new_s = { s with x; u } in
         let new_x = AD.Maths.((x *@ s.a) + (u *@ s.b)) in
+        (* s.dynamics ~k ~x ~u *)
         succ k, new_x, new_s :: tape)
       (0, x0, [])
       acc
@@ -73,7 +75,8 @@ let forward acc x0 =
 let adjoint xf flxx flx tape =
   let lambf = AD.Maths.((xf *@ flxx) + flx) in
   List.fold_left
-    (fun (lamb, lambs) { x; u; a; b = _; rlx; rlu = _; rlxx; rluu = _; rlux } ->
+    (fun (lamb, lambs)
+         { x; u; a; b = _; rlx; rlu = _; rlxx; rluu = _; rlux; dynamics = _ } ->
       let rlx = AD.Maths.(rlx - (x *@ rlxx)) in
       let lambs = lamb :: lambs in
       let lamb = AD.Maths.((lamb *@ transpose a) + (x *@ rlxx) + rlx + (u *@ rlux)) in
@@ -85,7 +88,8 @@ let adjoint xf flxx flx tape =
 let adjoint_back xf flxx flx tape =
   let lambf = AD.Maths.((xf *@ flxx) + flx) in
   List.fold_left
-    (fun (lamb, lambs) { x; u; a; b = _; rlx; rlu = _; rlxx; rluu = _; rlux } ->
+    (fun (lamb, lambs)
+         { x; u; a; b = _; rlx; rlu = _; rlxx; rluu = _; rlux; dynamics = _ } ->
       let lambs = lamb :: lambs in
       let lamb = AD.Maths.((lamb *@ transpose a) + (x *@ rlxx) + rlx + (u *@ rlux)) in
       lamb, lambs)

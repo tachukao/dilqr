@@ -11,6 +11,7 @@ type t =
   ; rlxx : AD.t
   ; rluu : AD.t
   ; rlux : AD.t
+  ; dynamics : k:int -> x:AD.t -> u:AD.t -> AD.t
   }
 
 val backward : AD.t -> AD.t -> t list -> (t * (AD.t * AD.t)) list * (float * float)
