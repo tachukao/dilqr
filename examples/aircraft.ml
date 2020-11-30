@@ -26,10 +26,11 @@ module P = struct
   let alpha = AD.Mat.ones 1 3
 
   let dyn ~theta ~k:_ ~x ~u =
+    let cons = AD.Maths.get_slice [ []; [ 3; 3 + n - 1 ] ] theta in
     let theta = AD.Maths.get_slice [ []; [ 9; -1 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
-    let dx = AD.Maths.((x *@ __a) + (u *@ theta)) in
-    AD.Maths.(x + (dx * dt))
+    let dx = AD.Maths.(tanh (x *@ __a) + (u *@ theta)) in
+    AD.Maths.(x + (dx * dt) + cons)
 
 
   let dyn_x = None
@@ -60,13 +61,16 @@ module P = struct
   let running_loss ~theta ~k:_k ~x ~u =
     let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
-    AD.Maths.(sum' (sqr x) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta)))))
+    AD.Maths.(
+      sum' (sqr (x *@ theta)) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta)))))
 
 
   let final_loss ~theta ~k:_k ~x =
+    let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
+    let theta = AD.Maths.reshape theta [| 3; 3 |] in
     let theta = AD.Maths.sqr theta in
     ignore theta;
-    AD.Maths.(AD.F 0. * sum' (x * x))
+    AD.Maths.(F 0. * (sum' (sqr (x *@ theta)) + sum' (sqr theta)))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -134,8 +138,8 @@ let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let x0, theta = AD.Mat.ones 1 3, prms in
+    let x0, _ = unpack prms in
+    let theta = prms in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -144,12 +148,13 @@ let test_grad () =
       then (
         Printf.printf "iter %2i | cost %.6f | pct change %.10f\n%!" k c pct_change;
         cprev := c);
-      pct_change < 1E-3
+      pct_change < 1E-12
   in
   let f us prms =
-    let x0, theta = AD.Mat.ones 1 3, prms in
+    let x0, _ = unpack prms in
+    let theta = prms in
     (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
     AD.Maths.sum fin_taus
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
@@ -170,43 +175,5 @@ let test_grad () =
 
 
 let () =
-  example ();
+  (* example (); *)
   test_grad ()
-
-(* 
-let test_grad2 () =
-  let module FD = Owl_algodiff_check.Make (Algodiff.D) in
-  let n_samples = 1 in
-  let x0 = AD.Mat.ones 1 3 in
-  let stop theta =
-    let cprev = ref 1E9 in
-    fun k us ->
-      let c = M.loss ~theta x0 us in
-      let pct_change = abs_float (c -. !cprev) /. !cprev in
-      if k mod 1 = 0
-      then (
-        Printf.printf "iter %2i | cost %.6f | pct change %.10f\n%!" k c pct_change;
-        cprev := c);
-      pct_change < 1E-3
-  in
-  let us = List.init P.n_steps (fun _ -> AD.Mat.gaussian 1 P.m) in
-  (* let theta = AD.Mat.gaussian 1 3 in *)
-  let ff theta =
-    let ustars = M.learn ~linesearch:false ~theta ~stop:(stop theta) x0 us in
-    let taus, big_fs, big_cs, cs, lambdas = M.g1 ~x0 ~ustars theta in
-    AD.Maths.(sum' taus + sum' big_fs + sum' big_cs + sum' cs + sum' lambdas)
-  in
-  let samples, directions = FD.generate_test_samples (1, 9) n_samples in
-  let threshold = 1E-5 in
-  let eps = 1E-5 in
-  let b1, k1 =
-    FD.Reverse.check
-      ~verbose:true
-      ~threshold
-      ~order:`fourth
-      ~eps
-      ~directions
-      ~f:ff
-      samples
-  in
-  Printf.printf "%b, %i\n%!" b1 k1 *)
