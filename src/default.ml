@@ -33,10 +33,7 @@ let forward_for_backward
         and rlxx = rl_xx ~theta ~k ~x ~u
         and rluu = rl_uu ~theta ~k ~x ~u
         and rlux = rl_ux ~theta ~k ~x ~u in
-        let f =
-          let next_x = dyn ~theta ~k ~x ~u in
-          AD.Maths.(next_x - (x *@ a) - (u *@ b))
-        in
+        let f = AD.Maths.(dyn ~theta ~k ~x ~u - (x *@ a) - (u *@ b)) in
         let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux; f } in
         let x = dyn ~theta ~k ~x ~u in
         succ k, x, s :: tape)
@@ -232,7 +229,7 @@ module Make (P : P) = struct
       (* swapping out the tape *)
       let _, tape =
         List.fold_left
-          (fun (k, tape) s ->
+          (fun (k, tape) (s : Lqr.t) ->
             let rlx =
               AD.Maths.(
                 reshape
@@ -362,7 +359,11 @@ module Make (P : P) = struct
           in
           let c =
             AD.Maths.(
-              concatenate ~axis:1 [| s.rlx - (s.x *@ s.rlxx); s.rlu - (s.u *@ s.rluu) |])
+              concatenate
+                ~axis:1
+                [| s.rlx - (s.x *@ s.rlxx) - (s.u *@ s.rlux)
+                 ; s.rlu - (s.u *@ s.rluu) - (s.x *@ transpose s.rlux)
+                |])
           in
           taus, big_f :: big_fs, big_c :: big_cs, c :: cs, s.f :: fs, s.x)
         (big_taus, big_fs, big_cs, cs, fs, xf)

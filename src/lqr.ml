@@ -72,16 +72,12 @@ let forward acc x0 =
   xf, tape
 
 
-let adjoint flx tape =
-  (* let flx = AD.Maths.(flx - (xf *@ flxx)) in *)
-  (* let lambf = AD.Maths.((xf *@ flxx) + flx) in *)
-  let lambf = flx in
+let adjoint lambf tape =
   List.fold_left
     (fun (lamb, lambs)
-         { x = _; u; a; b = _; rlx; rlu = _; rlxx = _; rluu = _; rlux; f = _ } ->
-      (* let rlx = AD.Maths.(rlx - (x *@ rlxx)) in *)
+         { x = _; u = _; a; b = _; rlx; rlu = _; rlxx = _; rluu = _; rlux = _; f = _ } ->
       let lambs = lamb :: lambs in
-      let lamb = AD.Maths.((lamb *@ transpose a) + rlx + (u *@ rlux)) in
+      let lamb = AD.Maths.((lamb *@ transpose a) + rlx) in
       lamb, lambs)
     (lambf, [])
     tape

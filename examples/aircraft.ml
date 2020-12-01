@@ -62,7 +62,9 @@ module P = struct
     let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
     AD.Maths.(
-      sum' (sqr (x *@ theta)) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta)))))
+      sum' (sqr (x *@ theta))
+      + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta))))
+      + sum' (sqr (x *@ theta * u)))
 
 
   let final_loss ~theta ~k:_k ~x =
