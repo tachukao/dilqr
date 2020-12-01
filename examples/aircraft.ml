@@ -25,21 +25,22 @@ module P = struct
   let __c = AD.pack_arr c
   let alpha = AD.Mat.ones 1 3
 
-  let dyn ~theta:_theta ~k:_ ~x ~u =
-    (* let w = AD.Maths.get_slice [ []; [ 0; 8 ] ] _theta in
-    let _w = AD.Maths.reshape w [| 3; 3 |] in *)
-    let dx = AD.Maths.((sin x *@ __a) + (sum' _theta * u *@ __b)) in
+  let dyn ~theta ~k:_ ~x ~u =
+    let _cons = AD.Maths.get_slice [ []; [ 3; 3 + n - 1 ] ] theta in
+    let theta = AD.Maths.get_slice [ []; [ 9; -1 ] ] theta in
+    let theta = AD.Maths.reshape theta [| 3; 3 |] in
+    let dx = AD.Maths.((sin x *@ theta) + (u *@ __b)) in
     AD.Maths.(x + (dx * dt))
 
 
   let dyn_x = None
 
   (* Some
-        (fun ~theta ~k:_ ~x:_ ~u:_ ->
-          ignore theta;
-          let theta = AD.Maths.sqr theta in
-          let __a = AD.Maths.(__a * theta) in
-          AD.Maths.((__a * dt) + AD.Mat.eye n)) *)
+      (fun ~theta ~k:_ ~x:_ ~u:_ ->
+        ignore theta;
+        let theta = AD.Maths.sqr theta in
+        let __a = AD.Maths.(__a * theta) in
+        AD.Maths.((__a * dt) + AD.Mat.eye n)) *)
 
   let fl_x = None
   let fl_xx = None
@@ -52,28 +53,24 @@ module P = struct
   let rl_xx = None
 
   (* Some
-        (fun ~theta ~k:_ ~x ->
-          let theta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
-          let theta = AD.Maths.sqr theta in
-          AD.Maths.(F 0. * theta * x)) *)
+      (fun ~theta ~k:_ ~x ->
+        let theta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
+        let theta = AD.Maths.sqr theta in
+        AD.Maths.(F 0. * theta * x)) *)
 
-  (* let running_loss ~theta ~k:_k ~x ~u =
+  let running_loss ~theta ~k:_k ~x ~u =
     let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
-    AD.Maths.(sum' (sqr x) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta)))))
- *)
-  let running_loss ~theta:_theta ~k:_k ~x ~u =
     AD.Maths.(
-      sum' (sqr x * sum' _theta)
-      + (sum' _theta * sum' x)
-      + sum' x
-      + sum' (AD.F 1. * sum' (sqr u)))
+      sum' (sqr (x *@ theta)) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta)))))
 
 
   let final_loss ~theta ~k:_k ~x =
+    let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
+    let theta = AD.Maths.reshape theta [| 3; 3 |] in
     let theta = AD.Maths.sqr theta in
     ignore theta;
-    AD.Maths.(AD.F 0. * sum' (x * x))
+    AD.Maths.(F 0. * (sum' (sqr (x *@ theta)) + sum' (sqr theta)))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -86,7 +83,7 @@ let unpack a =
 
 let example () =
   let stop prms =
-    let x0, theta = unpack prms in
+    let x0, theta = AD.Mat.ones 1 3, prms in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -99,7 +96,7 @@ let example () =
   in
   let f us prms =
     (* let x0, theta = AD.Mat.ones 1 3, prms in *)
-    let x0, theta = unpack prms in
+    let x0, theta = AD.Mat.ones 1 3, prms in
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     let _ =
       Mat.save_txt
@@ -111,7 +108,8 @@ let example () =
                ; (AD.Arr.shape fin_taus).(1) * (AD.Arr.shape fin_taus).(2)
               |]))
     in
-    AD.Maths.(l2norm_sqr' (get_slice [ [ 0; -1 ]; [] ] fin_taus))
+    AD.Maths.l2norm' fin_taus
+    (* M.differentiable_loss ~theta fin_taus *)
   in
   let max_steps = 1
   and eta = AD.F 0.0001 in
@@ -132,7 +130,7 @@ let example () =
       let new_prms = AD.Maths.(prms - (eta * dff)) in
       grad_descent (succ k) new_prms)
   in
-  grad_descent 0 AD.Maths.(F 0.1 * AD.Mat.gaussian 1 10) |> ignore
+  grad_descent 0 AD.Maths.(F 0.1 * AD.Mat.gaussian 1 18) |> ignore
 
 
 (* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
@@ -140,8 +138,8 @@ let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
   let stop prms =
-    (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let x0, theta = AD.Mat.ones 1 3, prms in
+    let x0, _ = unpack prms in
+    let theta = prms in
     let cprev = ref 1E9 in
     fun k us ->
       let c = M.loss ~theta x0 us in
@@ -150,16 +148,17 @@ let test_grad () =
       then (
         Printf.printf "iter %2i | cost %.6f | pct change %.10f\n%!" k c pct_change;
         cprev := c);
-      pct_change < 1E-7
+      pct_change < 1E-6
   in
   let f us prms =
-    let x0, theta = AD.Mat.ones 1 3, prms in
+    let x0, _ = unpack prms in
+    let theta = prms in
     (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
-    AD.Maths.(l2norm_sqr' (get_slice [ [ 0; -1 ]; [] ] fin_taus))
+    AD.Maths.sum fin_taus
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
-  let samples, directions = FD.generate_test_samples (1, 10) n_samples in
+  let samples, directions = FD.generate_test_samples (1, 18) n_samples in
   let threshold = 1E-5 in
   let eps = 1E-5 in
   let b1, k1 =
@@ -176,5 +175,5 @@ let test_grad () =
 
 
 let () =
-  example ();
+  (* example (); *)
   test_grad ()
