@@ -26,11 +26,11 @@ module P = struct
   let alpha = AD.Mat.ones 1 3
 
   let dyn ~theta ~k:_ ~x ~u =
-    let _cons = AD.Maths.get_slice [ []; [ 3; 3 + n - 1 ] ] theta in
+    let cons = AD.Maths.get_slice [ []; [ 3; 3 + n - 1 ] ] theta in
     let theta = AD.Maths.get_slice [ []; [ 9; -1 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
-    let dx = AD.Maths.((sin x *@ theta) + (u *@ __b)) in
-    AD.Maths.(x + (dx * dt))
+    let dx = AD.Maths.((x *@ __a) + (u *@ theta)) in
+    AD.Maths.(x + (dx * dt) + cons)
 
 
   let dyn_x = None
@@ -62,7 +62,9 @@ module P = struct
     let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
     AD.Maths.(
-      sum' (sqr (x *@ theta)) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta)))))
+      sum' (sqr (x *@ theta))
+      + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr (u *@ theta))))
+      + sum' (sqr (x *@ theta * u)))
 
 
   let final_loss ~theta ~k:_k ~x =
@@ -70,7 +72,7 @@ module P = struct
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
     let theta = AD.Maths.sqr theta in
     ignore theta;
-    AD.Maths.(F 0. * (sum' (sqr (x *@ theta)) + sum' (sqr theta)))
+    AD.Maths.(F 1. * (sum' (sqr (x *@ theta)) + sum' (sqr theta)))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -148,7 +150,7 @@ let test_grad () =
       then (
         Printf.printf "iter %2i | cost %.6f | pct change %.10f\n%!" k c pct_change;
         cprev := c);
-      pct_change < 1E-6
+      pct_change < 1E-12
   in
   let f us prms =
     let x0, _ = unpack prms in

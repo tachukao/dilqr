@@ -33,10 +33,8 @@ let forward_for_backward
         and rlxx = rl_xx ~theta ~k ~x ~u
         and rluu = rl_uu ~theta ~k ~x ~u
         and rlux = rl_ux ~theta ~k ~x ~u in
-        let rlx = AD.Maths.(rlx - (F 0. * (x *@ rlxx)))
-        and rlu = AD.Maths.(rlu - (F 0. * (u *@ rluu))) in
-        let dynamics = dyn ~theta in
-        let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux; dynamics } in
+        let f = AD.Maths.(dyn ~theta ~k ~x ~u - (x *@ a) - (u *@ b)) in
+        let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux; f } in
         let x = dyn ~theta ~k ~x ~u in
         succ k, x, s :: tape)
       (0, x0, [])
@@ -231,7 +229,7 @@ module Make (P : P) = struct
       (* swapping out the tape *)
       let _, tape =
         List.fold_left
-          (fun (k, tape) s ->
+          (fun (k, tape) (s : Lqr.t) ->
             let rlx =
               AD.Maths.(
                 reshape
@@ -331,7 +329,7 @@ module Make (P : P) = struct
 
   let g1 ~x0 ~ustars theta =
     let flxx, flx, tape, xf = ffb ~theta x0 ustars in
-    let lambda0, lambdas = Lqr.adjoint xf flxx flx tape in
+    let lambda0, lambdas = Lqr.adjoint flx tape in
     let lambdas = AD.Maths.stack ~axis:0 (Array.of_list (lambda0 :: lambdas)) in
     let big_taus = [ AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] ] in
     let big_fs = [ AD.Mat.zeros (n + m) n ] in
@@ -345,9 +343,10 @@ module Make (P : P) = struct
       ]
     in
     let fs = [] in
-    let big_taus, big_fs, big_cs, cs, fs =
+    let big_taus, big_fs, big_cs, cs, fs, _ =
       List.fold_left
-        (fun (taus, big_fs, big_cs, cs, fs) (s : Lqr.t) ->
+        (fun (taus, big_fs, big_cs, cs, fs, next_x) (s : Lqr.t) ->
+          ignore next_x;
           let taus =
             let tau = AD.Maths.concatenate ~axis:1 [| s.x; s.u |] in
             tau :: taus
@@ -360,13 +359,14 @@ module Make (P : P) = struct
           in
           let c =
             AD.Maths.(
-              concatenate ~axis:1 [| s.rlx - (s.x *@ s.rlxx); s.rlu - (s.u *@ s.rluu) |])
+              concatenate
+                ~axis:1
+                [| s.rlx - (s.x *@ s.rlxx) - (s.u *@ s.rlux)
+                 ; s.rlu - (s.u *@ s.rluu) - (s.x *@ transpose s.rlux)
+                |])
           in
-          let f =
-            AD.Maths.(s.dynamics ~k:0 ~x:s.x ~u:s.u - (s.x *@ s.a) - (s.u *@ s.b))
-          in
-          taus, big_f :: big_fs, big_c :: big_cs, c :: cs, f :: fs)
-        (big_taus, big_fs, big_cs, cs, fs)
+          taus, big_f :: big_fs, big_c :: big_cs, c :: cs, s.f :: fs, s.x)
+        (big_taus, big_fs, big_cs, cs, fs, xf)
         tape
     in
     let taus = AD.Maths.stack ~axis:0 Array.(of_list big_taus) in
