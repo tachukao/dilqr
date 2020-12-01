@@ -380,7 +380,7 @@ module Make (P : P) = struct
     let big_fs = AD.Maths.stack ~axis:0 Array.(of_list big_fs) in
     let big_cs = AD.Maths.stack ~axis:0 Array.(of_list big_cs) in
     let cs = AD.Maths.stack ~axis:0 Array.(of_list cs) in
-    let fs = AD.Maths.stack ~axis:0 Array.(of_list (x0 :: fs)) in
+    let fs = AD.Maths.stack ~axis:0 Array.(of_list (AD.Maths.(F 1. * x0) :: fs)) in
     let _ =
       Mat.save_txt ~out:"fs" (AD.unpack_arr (AD.Maths.reshape fs [| n_steps + 1; P.n |]))
     in
