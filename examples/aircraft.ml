@@ -29,7 +29,7 @@ module P = struct
     let cons = AD.Maths.get_slice [ []; [ 3; 3 + n - 1 ] ] theta in
     let theta = AD.Maths.get_slice [ []; [ 9; -1 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
-    let dx = AD.Maths.(tanh (x *@ __a) + (u *@ theta)) in
+    let dx = AD.Maths.((x *@ __a) + (u *@ theta)) in
     AD.Maths.(x + (dx * dt) + cons)
 
 
@@ -70,7 +70,7 @@ module P = struct
     let theta = AD.Maths.reshape theta [| 3; 3 |] in
     let theta = AD.Maths.sqr theta in
     ignore theta;
-    AD.Maths.(F 0. * (sum' (sqr (x *@ theta)) + sum' (sqr theta)))
+    AD.Maths.(F 1. * (sum' (sqr (x *@ theta)) + sum' (sqr theta)))
 end
 
 module M = Dilqr.Default.Make (P)
@@ -154,7 +154,7 @@ let test_grad () =
     let x0, _ = unpack prms in
     let theta = prms in
     (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     AD.Maths.sum fin_taus
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
