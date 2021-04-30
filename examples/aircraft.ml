@@ -7,6 +7,9 @@ let dir = Cmdargs.(get_string "-d" |> force ~usage:"-d [dir]")
 let in_dir = Printf.sprintf "%s/%s" dir
 
 module P = struct
+  type theta = AD.t
+
+  let primal' = AD.primal'
   let n = 3
   let m = 3
   let n_steps = 200

@@ -8,6 +8,9 @@ let tmp_dir = Cmdargs.(get_string "-tmp" |> force ~usage:"-tmp [tmp dir]")
 let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
 
 module P = struct
+  type theta = AD.t
+
+  let primal' = AD.primal'
   let n = 3
   let m = 3
   let n_steps = 1000
@@ -32,6 +35,7 @@ module P = struct
 
 
   let dyn_x = None
+
   (* Some
       (fun ~theta ~k:_ ~x:_ ~u:_ ->
         let __a = AD.Maths.(__a * theta) in
@@ -39,7 +43,6 @@ module P = struct
  *)
 
   let dyn_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(dt * AD.Mat.(eye n)))
-
   let rl_xx = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))
   let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.(zeros m n))
   let rl_uu = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.eye m))
@@ -74,7 +77,7 @@ let example () =
   in
   let f us prms =
     let x0, theta = AD.Mat.ones 1 3, prms in
-    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us x0 theta in
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
     let _ =
       Mat.save_txt
         ~out:(in_tmp_dir "taus_ilqr")
@@ -133,7 +136,7 @@ let test_grad () =
   in
   let f us prms =
     let x0, theta = AD.Mat.ones 1 3, prms in
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us x0 theta in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     let fin_taus = AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] fin_taus in
     AD.Maths.l2norm' fin_taus
     (* M.differentiable_loss ~theta fin_taus *)

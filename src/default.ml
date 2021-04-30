@@ -2,10 +2,10 @@ open Owl
 module AD = Algodiff.D
 open AD.Builder
 
-type t = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
-type s = theta:AD.t -> k:int -> x:AD.t -> AD.t
-type final_loss = theta:AD.t -> k:int -> x:AD.t -> AD.t
-type running_loss = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
+type 'a t = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
+type 'a s = theta:'a -> k:int -> x:AD.t -> AD.t
+type 'a final_loss = theta:'a -> k:int -> x:AD.t -> AD.t
+type 'a running_loss = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
 let forward_for_backward
     ~theta
@@ -46,21 +46,24 @@ let forward_for_backward
 
 
 module type P = sig
+  type theta
+
+  val primal' : theta -> theta
   val n : int
   val m : int
   val n_steps : int
-  val dyn : t
-  val final_loss : final_loss
-  val running_loss : running_loss
-  val dyn_x : t option
-  val dyn_u : t option
-  val rl_uu : t option
-  val rl_xx : t option
-  val rl_ux : t option
-  val rl_u : t option
-  val rl_x : t option
-  val fl_xx : s option
-  val fl_x : s option
+  val dyn : theta t
+  val final_loss : theta final_loss
+  val running_loss : theta running_loss
+  val dyn_x : theta t option
+  val dyn_u : theta t option
+  val rl_uu : theta t option
+  val rl_xx : theta t option
+  val rl_ux : theta t option
+  val rl_u : theta t option
+  val rl_x : theta t option
+  val fl_xx : theta s option
+  val fl_x : theta s option
 end
 
 module Make (P : P) = struct
@@ -382,7 +385,7 @@ module Make (P : P) = struct
 
   let ilqr ?(linesearch = true) ~stop ~us ~x0 ~theta () =
     let ustars =
-      learn ~linesearch ~theta:(AD.primal' theta) ~stop AD.(primal' x0) us
+      learn ~linesearch ~theta:(primal' theta) ~stop AD.(primal' x0) us
       |> List.map AD.primal'
     in
     let taus, big_fs, big_cs, cs, lambdas, fs = g1 ~x0:(AD.primal' x0) ~ustars theta in
@@ -391,6 +394,6 @@ module Make (P : P) = struct
       ~lambdas:(AD.primal' lambdas)
       ~taus:(AD.primal' taus)
       ~ustars
-      ~theta:(AD.primal' theta)
+      ~theta:(primal' theta)
       inp
 end
