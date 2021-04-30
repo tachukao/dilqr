@@ -26,6 +26,7 @@ let backward flxx flx tape =
         let qu = AD.Maths.(rlu + (vx *@ bt)) in
         let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
+        let quu = AD.Maths.((quu + transpose quu) / F 2.) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
         if not (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu))
         then (
@@ -36,7 +37,7 @@ let backward flxx flx tape =
             tape)
         else (
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
-          let qtux = AD.Maths.(qux + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ at)) in
+          let qtux = AD.Maths.(qux + (b *@ (AD.F 0. * AD.Mat.(eye n)) *@ at)) in
           let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
           let _k =
             AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
@@ -44,6 +45,7 @@ let backward flxx flx tape =
             |> AD.Maths.neg
           in
           let vxx = AD.Maths.(qxx + transpose (_K *@ qux)) in
+          let vxx = AD.Maths.((vxx + transpose vxx) / F 2.) in
           let vx = AD.Maths.(qx + (qu *@ transpose _K)) in
           let acc = (s, (_K, _k)) :: acc in
           let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
@@ -64,7 +66,6 @@ let forward acc x0 =
         let u = AD.Maths.((x *@ _K) + _k) in
         let new_s = { s with x; u } in
         let new_x = AD.Maths.((x *@ s.a) + (u *@ s.b)) in
-        (* s.dynamics ~k ~x ~u *)
         succ k, new_x, new_s :: tape)
       (0, x0, [])
       acc
@@ -86,9 +87,21 @@ let adjoint lambf tape =
 let adjoint_back xf flxx flx tape =
   let lambf = AD.Maths.((xf *@ flxx) + flx) in
   List.fold_left
-    (fun (lamb, lambs) { x; u; a; b = _; rlx; rlu = _; rlxx; rluu = _; rlux; f = _ } ->
+    (fun (lamb, lambs)
+         { x = _x
+         ; u = _u
+         ; a
+         ; b = _
+         ; rlx
+         ; rlu = _
+         ; rlxx = _rlxx
+         ; rluu = _rluu
+         ; rlux = _rlux
+         ; f = _
+         } ->
       let lambs = lamb :: lambs in
-      let lamb = AD.Maths.((lamb *@ transpose a) + (x *@ rlxx) + rlx + (u *@ rlux)) in
+      let lamb = AD.Maths.((lamb *@ transpose a) + (_x *@ _rlxx) + rlx + (_u *@ _rlux)) in
+      (* let lamb = AD.Maths.((lamb *@ transpose a) + rlx) in *)
       lamb, lambs)
     (lambf, [])
     tape
