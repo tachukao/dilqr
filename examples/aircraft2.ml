@@ -26,12 +26,13 @@ module P = struct
   let __c = AD.pack_arr c
 
   let dyn ~theta ~k:_ ~x ~u =
-    let __a = AD.Maths.(__a * theta) in
+    let __a = AD.Maths.(__a * sum' theta) in
     let dx = AD.Maths.((x *@ __a) + u) in
     AD.Maths.(x + (dx * dt))
 
 
   let dyn_x = None
+
   (* Some
       (fun ~theta ~k:_ ~x:_ ~u:_ ->
         let __a = AD.Maths.(__a * theta) in
@@ -39,15 +40,21 @@ module P = struct
  *)
 
   let dyn_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(dt * AD.Mat.(eye n)))
+  let rl_xx = None
 
-  let rl_xx = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))
+  (*Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))*)
+
   let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.(zeros m n))
   let rl_uu = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.eye m))
   let rl_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u -> AD.Maths.(F 2. * u))
-  let rl_x = Some (fun ~theta:_ ~k:_ ~x ~u:_ -> AD.Maths.(F 2. * x))
+  let rl_x = None
   let fl_xx = Some (fun ~theta:_ ~k:_ ~x:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))
   let fl_x = Some (fun ~theta:_ ~k:_ ~x -> AD.Maths.(F 2. * x))
-  let running_loss ~theta:_ ~k:_k ~x ~u = AD.Maths.(sum' (sqr x) + sum' (u * u))
+
+  let running_loss ~theta ~k:_k ~x ~u =
+    AD.Maths.((sum' (sqr x) * sum' (sqr theta)) + sum' (u * u))
+
+
   let final_loss ~theta:_ ~k:_k ~x = AD.Maths.(sum' (x * x))
 end
 
@@ -74,7 +81,7 @@ let example () =
   in
   let f us prms =
     let x0, theta = AD.Mat.ones 1 3, prms in
-    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us x0 theta in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     let _ =
       Mat.save_txt
         ~out:(in_tmp_dir "taus_ilqr")
@@ -133,7 +140,7 @@ let test_grad () =
   in
   let f us prms =
     let x0, theta = AD.Mat.ones 1 3, prms in
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us x0 theta in
+    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
     let fin_taus = AD.Maths.get_slice [ [ 0; -2 ]; []; [] ] fin_taus in
     AD.Maths.l2norm' fin_taus
     (* M.differentiable_loss ~theta fin_taus *)
@@ -156,5 +163,5 @@ let test_grad () =
 
 
 let () =
-  (* example (); *)
+  example ();
   test_grad ()
