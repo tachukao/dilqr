@@ -7,6 +7,8 @@ type s = theta:AD.t -> k:int -> x:AD.t -> AD.t
 type final_loss = theta:AD.t -> k:int -> x:AD.t -> AD.t
 type running_loss = theta:AD.t -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
+let _ = Printexc.record_backtrace true
+
 let forward_for_backward
     ~theta
     ~dyn_x
@@ -48,7 +50,6 @@ let forward_for_backward
 module type P = sig
   val n : int
   val m : int
-  val n_steps : int
   val dyn : t
   val final_loss : final_loss
   val running_loss : running_loss
@@ -251,6 +252,7 @@ module Make (P : P) = struct
           (AD.Maths.get_slice [ [ -1 ]; []; [ 0; n - 1 ] ] tau_bar)
           [| 1; n |]
       in
+      let _ = Mat.save_txt ~out:"flx" (AD.unpack_arr flx) in
       flx, tape
     in
     fun ~taus ~ustars ~theta ~lambdas ->
@@ -267,6 +269,10 @@ module Make (P : P) = struct
             ctbars_tape
           |> List.cons AD.Maths.(concatenate ~axis:1 [| ctbars_xf; AD.Mat.zeros 1 m |])
           |> List.rev
+        in
+        let _ =
+          AD.unpack_arr (AD.Maths.concatenate ~axis:0 (Array.of_list ctbars))
+          |> Mat.save_txt ~out:"ctbars"
         in
         ( AD.Maths.stack ~axis:0 (Array.of_list ctbars)
         , AD.Maths.stack ~axis:0 (Array.of_list (dlambda0 :: dlambdas)) )
@@ -313,7 +319,11 @@ module Make (P : P) = struct
             List.map
               (fun idx ->
                 if idx = 0
-                then big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars ()
+                then
+                  AD.Maths.(
+                    get_slice
+                      [ [ 0; -1 ] ]
+                      (big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars ()))
                 else if idx = 1
                 then big_ct_bar ~taus ~ctbars ()
                 else if idx = 2
@@ -374,9 +384,6 @@ module Make (P : P) = struct
     let big_cs = AD.Maths.stack ~axis:0 Array.(of_list big_cs) in
     let cs = AD.Maths.stack ~axis:0 Array.(of_list cs) in
     let fs = AD.Maths.stack ~axis:0 Array.(of_list fs) in
-    let _ =
-      Mat.save_txt ~out:"fs" (AD.unpack_arr (AD.Maths.reshape fs [| n_steps; P.n |]))
-    in
     taus, big_fs, big_cs, cs, lambdas, fs
 
 

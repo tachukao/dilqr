@@ -27,7 +27,6 @@ val forward_for_backward
 module type P = sig
   val n : int
   val m : int
-  val n_steps : int
   val dyn : t
   val final_loss : final_loss
   val running_loss : running_loss
