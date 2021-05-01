@@ -8,6 +8,9 @@ let tmp_dir = Cmdargs.(get_string "-tmp" |> force ~usage:"-tmp [tmp dir]")
 let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
 
 module P = struct
+  type theta = AD.t
+
+  let primal' = AD.primal'
   let n = 3
   let m = 3
   let n_steps = 1000
@@ -40,10 +43,14 @@ module P = struct
  *)
 
   let dyn_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(dt * AD.Mat.(eye n)))
+<<<<<<< HEAD
   let rl_xx = None
 
   (*Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))*)
 
+=======
+  let rl_xx = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.(eye n)))
+>>>>>>> 889255fdca79443d761b6432a5cc7a275a9153ad
   let rl_ux = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Mat.(zeros m n))
   let rl_uu = Some (fun ~theta:_ ~k:_ ~x:_ ~u:_ -> AD.Maths.(F 2. * AD.Mat.eye m))
   let rl_u = Some (fun ~theta:_ ~k:_ ~x:_ ~u -> AD.Maths.(F 2. * u))
@@ -81,7 +88,11 @@ let example () =
   in
   let f us prms =
     let x0, theta = AD.Mat.ones 1 3, prms in
+<<<<<<< HEAD
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
+=======
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
+>>>>>>> 889255fdca79443d761b6432a5cc7a275a9153ad
     let _ =
       Mat.save_txt
         ~out:(in_tmp_dir "taus_ilqr")

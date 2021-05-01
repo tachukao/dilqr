@@ -1,6 +1,6 @@
 # Differentiable iLQR
 
-Implementation of differentiable iterative LQR in OCaml.
+Implementation of differentiable iterative LQR in OCaml. You read that correctly.
 
 ## Dependencies
 1. Owl https://github.com/owlbarn/owl
