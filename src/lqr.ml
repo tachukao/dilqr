@@ -28,6 +28,8 @@ let backward flxx flx tape =
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.((quu + transpose quu) / F 2.) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
+        (* Mat.save_txt ~out:"qtuu" (AD.unpack_arr qtuu);
+        Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx); *)
         if not (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu))
         then (
           Printf.printf " NOT POSDEF. mu = %f \n%!" mu;

@@ -30,20 +30,6 @@ module type P = sig
   val primal' : theta -> theta
   val n : int
   val m : int
-<<<<<<< HEAD
-  val dyn : t
-  val final_loss : final_loss
-  val running_loss : running_loss
-  val dyn_x : t option
-  val dyn_u : t option
-  val rl_uu : t option
-  val rl_xx : t option
-  val rl_ux : t option
-  val rl_u : t option
-  val rl_x : t option
-  val fl_xx : s option
-  val fl_x : s option
-=======
   val n_steps : int
   val dyn : theta t
   val final_loss : theta final_loss
@@ -57,7 +43,6 @@ module type P = sig
   val rl_x : theta t option
   val fl_xx : theta s option
   val fl_x : theta s option
->>>>>>> 889255fdca79443d761b6432a5cc7a275a9153ad
 end
 
 module Make (P : P) : sig
@@ -83,8 +68,8 @@ module Make (P : P) : sig
     -> AD.t
 
   val g1
-    : theta:P.theta
-    ->  x0:AD.t
+    :  theta:P.theta
+    -> x0:AD.t
     -> ustars:AD.t list
     -> AD.t * AD.t * AD.t * AD.t * AD.t * AD.t
 end
