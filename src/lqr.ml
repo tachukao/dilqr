@@ -32,7 +32,7 @@ let backward flxx flx tape =
         Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx); *)
         if not (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu))
         then (
-          Printf.printf " NOT POSDEF. mu = %f \n%!" mu;
+          Printf.printf "NOT POSDEF. mu = %f \n%!" mu;
           backward
             (Regularisation.increase (delta, mu))
             (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])

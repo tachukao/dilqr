@@ -330,14 +330,6 @@ module Make (P : P) = struct
           , AD.Maths.stack ~axis:0 (Array.of_list (dlambda0 :: dlambdas)) )
         in
         let big_ft_bar ~taus ~lambdas ~dlambdas ~ctbars () =
-          let _ =
-            Mat.save_txt
-              ~out:"dlambdas"
-              (AD.unpack_arr
-                 (AD.Maths.reshape
-                    dlambdas
-                    [| (AD.Arr.shape dlambdas).(0); (AD.Arr.shape dlambdas).(2) |]))
-          in
           let tdl =
             Bmo.AD.bmm
               (AD.Maths.transpose
@@ -436,9 +428,6 @@ module Make (P : P) = struct
       let big_cs = AD.Maths.stack ~axis:0 Array.(of_list big_cs) in
       let cs = AD.Maths.stack ~axis:0 Array.(of_list cs) in
       let fs = AD.Maths.stack ~axis:0 Array.(of_list fs) in
-      let _ =
-        Mat.save_txt ~out:"fs" (AD.unpack_arr (AD.Maths.reshape fs [| n_steps; P.n |]))
-      in
       taus, big_fs, big_cs, cs, lambdas, fs
 
 
