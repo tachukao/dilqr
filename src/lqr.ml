@@ -28,9 +28,9 @@ let backward flxx flx tape =
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.((quu + transpose quu) / F 2.) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        Mat.save_txt ~out:"b" (AD.unpack_arr b);
+        (* 
         Mat.save_txt ~out:"qtuu" (AD.unpack_arr qtuu);
-        Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx);
+        Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx); *)
         let _, svs, _ = AD.Linalg.svd qtuu in
         if not
              (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu)
@@ -42,8 +42,6 @@ let backward flxx flx tape =
             (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
             tape)
         else (
-          let _, svs, _ = AD.Linalg.svd qtuu in
-          let _ = Mat.save_txt ~out:"svs" (AD.unpack_arr svs) in
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
           let qtux = AD.Maths.(qux + (b *@ (F 0. * AD.Mat.(eye n)) *@ at)) in
           let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
