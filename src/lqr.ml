@@ -28,15 +28,29 @@ let backward flxx flx tape =
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.((quu + transpose quu) / F 2.) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        (* 
+        (* let _ =
+          let k = C.rank in
+          Mat.save_txt
+            ~out:
+              (Printf.sprintf
+                 "/rds/user/mmcs3/hpc-work/_results/why_prep/checks_2/qtuu_%i"
+                 k)
+            (AD.unpack_arr qtuu);
+          C.root_perform (fun () ->
+              Mat.save_txt
+                ~out:
+                  (Printf.sprintf
+                     "/rds/user/mmcs3/hpc-work/_results/why_prep/checks_2/rlxx_%i"
+                     k)
+                (AD.unpack_arr rlxx))
+        in
+        (*  *)
         Mat.save_txt ~out:"qtuu" (AD.unpack_arr qtuu);
         Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx); *)
-        let _, svs, _ = AD.Linalg.svd qtuu in
-        if not
-             (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu)
-             && Mat.min' (AD.unpack_arr svs) > 1E-8)
+        let _, svs, _ = Linalg.D.svd (AD.unpack_arr qtuu) in
+        if not (Mat.min' svs > 1E-8)
         then (
-          if mu > 1E-6 then Printf.printf "Regularizing... mu = %f \n%!" mu;
+          if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
           backward
             (Regularisation.increase (delta, mu))
             (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
