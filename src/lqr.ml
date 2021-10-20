@@ -17,8 +17,8 @@ type t =
 let backward flxx flx tape =
   let n = AD.(shape flx).(1) in
   let kf = List.length tape in
-  let k, _, _, df1, df2, acc =
-    let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc) = function
+  let k, _, _, df1, df2, acc, quus =
+    let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc, quus) = function
       | ({ x = _; u = _; a; b; rlx; rlu; rlxx; rluu; rlux; f = _ } as s) :: tl ->
         let at = AD.Maths.transpose a in
         let bt = AD.Maths.transpose b in
@@ -28,32 +28,13 @@ let backward flxx flx tape =
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.((quu + transpose quu) / F 2.) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        (* let _ =
-          let k = C.rank in
-          Mat.save_txt
-            ~out:
-              (Printf.sprintf
-                 "/rds/user/mmcs3/hpc-work/_results/why_prep/checks_2/qtuu_%i"
-                 k)
-            (AD.unpack_arr qtuu);
-          C.root_perform (fun () ->
-              Mat.save_txt
-                ~out:
-                  (Printf.sprintf
-                     "/rds/user/mmcs3/hpc-work/_results/why_prep/checks_2/rlxx_%i"
-                     k)
-                (AD.unpack_arr rlxx))
-        in
-        (*  *)
-        Mat.save_txt ~out:"qtuu" (AD.unpack_arr qtuu);
-        Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx); *)
         let _, svs, _ = Linalg.D.svd (AD.unpack_arr qtuu) in
         if not (Mat.min' svs > 1E-8)
         then (
           if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
           backward
             (Regularisation.increase (delta, mu))
-            (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
+            (kf - 1, flxx, flx, AD.F 0., AD.F 0., [], [])
             tape)
         else (
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
@@ -70,13 +51,13 @@ let backward flxx flx tape =
           let acc = (s, (_K, _k)) :: acc in
           let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
           let df2 = AD.Maths.(df2 + sum' (_k *@ transpose quu)) in
-          backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc) tl)
-      | [] -> k, vxx, vx, df1, df2, acc
+          backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc, quu :: quus) tl)
+      | [] -> k, vxx, vx, df1, df2, acc, quus
     in
-    backward (1., 0.) (kf - 1, flxx, flx, AD.F 0., AD.F 0., []) tape
+    backward (1., 0.) (kf - 1, flxx, flx, AD.F 0., AD.F 0., [], []) tape
   in
   assert (k = -1);
-  acc, (AD.unpack_flt df1, AD.unpack_flt df2)
+  acc, (AD.unpack_flt df1, AD.unpack_flt df2), quus
 
 
 let forward acc x0 =

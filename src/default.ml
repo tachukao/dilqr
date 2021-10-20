@@ -184,7 +184,7 @@ module Make (P : P) = struct
     fun x0 us ->
       (* xf, xs, us are in reverse *)
       let vxxf, vxf, tape, _ = ffb x0 us in
-      let acc, (df1, df2) = Lqr.backward vxxf vxf tape in
+      let acc, (df1, df2), _ = Lqr.backward vxxf vxf tape in
       fun alpha ->
         let _, _, uhats =
           List.fold_left
@@ -253,6 +253,12 @@ module Make (P : P) = struct
       AD.Maths.of_arrays mapped |> AD.Maths.sum'
 
 
+  let differentiable_quus ~theta x0 us =
+    let vxxf, vxf, tape, _ = ffb ~theta x0 us in
+    let _, _, quus = Lqr.backward vxxf vxf tape in
+    quus
+
+
   let learn ?(linesearch = true) ~theta =
     let loss = loss ~theta in
     let update = update ~theta in
@@ -316,7 +322,7 @@ module Make (P : P) = struct
           (* recreating tape, pass as argument in the future *)
           let flxx, _, tape, _ = ffb x0 ustars in
           let flx, tape = swap_out_tape tape tau_bar in
-          let acc, _ = Lqr.backward flxx flx tape in
+          let acc, _, _ = Lqr.backward flxx flx tape in
           let ctbars_xf, ctbars_tape = Lqr.forward acc AD.Mat.(zeros 1 n) in
           let dlambda0, dlambdas = Lqr.adjoint_back ctbars_xf flxx flx ctbars_tape in
           let ctbars =

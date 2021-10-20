@@ -49,6 +49,7 @@ module Make (P : P) : sig
   val trajectory : theta:P.theta -> AD.t -> AD.t list -> AD.t
   val loss : theta:P.theta -> AD.t -> AD.t list -> float
   val differentiable_loss : theta:P.theta -> AD.t -> AD.t
+  val differentiable_quus : theta:P.theta -> AD.t -> AD.t list -> AD.t list
 
   val learn
     :  ?linesearch:bool
