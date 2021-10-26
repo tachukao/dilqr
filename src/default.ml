@@ -254,10 +254,13 @@ module Make (P : P) = struct
 
 
   let differentiable_quus ~theta x0 us =
-    let vxxf, vxf, tape, _ = ffb ~theta x0 us in
+    let theta = theta in
+    let vxxf, vxf, tape, _ = ffb ~theta (AD.primal' x0) us in
     let _, _, quus = Lqr.backward vxxf vxf tape in
     quus
 
+
+  (* List.map (fun x -> AD.primal' x) quus *)
 
   let learn ?(linesearch = true) ~theta =
     let loss = loss ~theta in

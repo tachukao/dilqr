@@ -139,7 +139,7 @@ let example () =
 (* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
 let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
-  let n_samples = 1 in
+  let n_samples = 10 in
   let stop prms =
     let x0 = AD.Mat.zeros 1 3 in
     let theta = prms in
@@ -158,12 +158,29 @@ let test_grad () =
     let theta = prms in
     (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
     let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
-    M.differentiable_loss ~theta fin_taus
+    let fin_taus =
+      AD.Maths.reshape
+        fin_taus
+        [| (AD.Arr.shape fin_taus).(0)
+         ; (AD.Arr.shape fin_taus).(1) * (AD.Arr.shape fin_taus).(2)
+        |]
+    in
+    let _ =
+      Stdio.printf "shapeee %i %i %!" (AD.Mat.row_num fin_taus) (AD.Mat.col_num fin_taus)
+    in
+    let _us = AD.Maths.get_slice [ []; [ 3; -1 ] ] fin_taus in
+    let _us =
+      List.init (AD.Mat.row_num _us) (fun i ->
+          AD.primal' (AD.Maths.get_slice [ [ i ] ] _us))
+    in
+    (* M.differentiable_loss ~theta fin_taus *)
+    M.differentiable_quus ~theta x0 _us
+    |> fun z -> Array.of_list z |> AD.Maths.concatenate ~axis:0 |> AD.Maths.l2norm_sqr'
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
   let samples, directions = FD.generate_test_samples (1, 3) n_samples in
   let threshold = 1E-5 in
-  let eps = 1E-5 in
+  let eps = 1E-7 in
   let b1, k1 =
     FD.Reverse.check
       ~verbose:true
