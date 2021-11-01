@@ -26,10 +26,12 @@ let backward flxx flx tape =
         let qu = AD.Maths.(rlu + (vx *@ bt)) in
         let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
-        let quu = AD.Maths.((quu + transpose quu) / F 2.) in
-        let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        let _, svs, _ = Linalg.D.svd (AD.unpack_arr qtuu) in
-        if not (Mat.min' svs > 1E-8)
+        let quu = AD.Maths.(F 0.5 * (quu + transpose quu)) in
+        let qtuu = AD.Maths.(quu + (AD.F mu * (b *@ bt))) in
+        let min_eval =
+          qtuu |> AD.unpack_arr |> Linalg.D.eigvals |> Dense.Matrix.Z.re |> Mat.min'
+        in
+        if not (min_eval > 1E-8)
         then (
           if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
           backward
