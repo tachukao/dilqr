@@ -27,9 +27,15 @@ let backward flxx flx tape =
         let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.((quu + transpose quu) / F 2.) in
-        let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        let _, svs, _ = Linalg.D.svd (AD.unpack_arr qtuu) in
-        if not (Mat.min' svs > 1E-8)
+        let qtuu = AD.Maths.(quu + (AD.F mu * (b *@ bt))) in
+        (* let _, svs, _ = Linalg.D.svd (AD.unpack_arr qtuu) in
+        if not (Mat.min' svs > 1E-8) *)
+        (* let svs = Linalg.D.eigvals (AD.unpack_arr qtuu) |> Dense.Matrix.Z.re in *)
+        let _, svs, _ = AD.Linalg.svd qtuu in
+        if not
+             (Owl.Linalg.D.is_posdef (AD.unpack_arr qtuu)
+             && Mat.min' (AD.unpack_arr svs) > 1E-8)
+           (* if not (Mat.min' svs > 1E-8) *)
         then (
           if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
           backward
@@ -38,12 +44,28 @@ let backward flxx flx tape =
             tape)
         else (
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
-          let qtux = AD.Maths.(qux + (b *@ (F 0. * AD.Mat.(eye n)) *@ at)) in
-          let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
+          let qtux = AD.Maths.(qux) in
+          let _K =
+            try AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg with
+            | e ->
+              Stdio.printf "error in dilqr qtux: %s %!" (Base.Exn.to_string e);
+              AD.Linalg.(
+                linsolve
+                  AD.Maths.(qtuu + AD.Mat.eye (AD.Mat.row_num qtuu))
+                  AD.Maths.(transpose qtux))
+          in
           let _k =
-            AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
-            |> AD.Maths.transpose
-            |> AD.Maths.neg
+            try
+              AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
+              |> AD.Maths.transpose
+              |> AD.Maths.neg
+            with
+            | e ->
+              Stdio.printf "error in dilqr : %s %!" (Base.Exn.to_string e);
+              AD.Linalg.(
+                linsolve
+                  AD.Maths.(qtuu + AD.Mat.eye (AD.Mat.row_num qtuu))
+                  AD.Maths.(transpose qu))
           in
           let vxx = AD.Maths.(qxx + transpose (_K *@ qux)) in
           let vxx = AD.Maths.((vxx + transpose vxx) / F 2.) in
