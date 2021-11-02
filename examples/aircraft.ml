@@ -65,7 +65,8 @@ module P = struct
     (* let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
     let theta = AD.Maths.reshape theta [| 3; 3 |] in *)
     AD.Maths.(
-      sum' (sqr (cos x)) + sum' x + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr u))))
+      (* sum' (sqr (cos x)) + sum' x + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr u)))) *)
+      sum' (sqr x) + sum' (sqr (cos x)) + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr u))))
 
 
   let final_loss ~theta ~k:_k ~x =
@@ -139,7 +140,7 @@ let example () =
 (* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
 let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
-  let n_samples = 10 in
+  let n_samples = 2 in
   let stop prms =
     let x0 = AD.Mat.zeros 1 3 in
     let theta = prms in
@@ -157,7 +158,7 @@ let test_grad () =
     let x0 = AD.Mat.zeros 1 3 in
     let theta = prms in
     (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
     let fin_taus =
       AD.Maths.reshape
         fin_taus
@@ -180,7 +181,7 @@ let test_grad () =
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
   let samples, directions = FD.generate_test_samples (1, 3) n_samples in
   let threshold = 1E-5 in
-  let eps = 1E-7 in
+  let eps = 1E-4 in
   let b1, k1 =
     FD.Reverse.check
       ~verbose:true

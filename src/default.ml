@@ -254,8 +254,7 @@ module Make (P : P) = struct
 
 
   let differentiable_quus ~theta x0 us =
-    let theta = theta in
-    let vxxf, vxf, tape, _ = ffb ~theta (AD.primal' x0) us in
+    let vxxf, vxf, tape, _ = ffb ~theta x0 us in
     let _, _, quus = Lqr.backward vxxf vxf tape in
     quus
 
