@@ -15,7 +15,7 @@ type t =
   }
 
 let backward flxx flx tape =
-  let n = AD.(shape flx).(1) in
+  (* let n = AD.(shape flx).(1) in *)
   let kf = List.length tape in
   let k, _, _, df1, df2, acc, quus =
     let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc, quus) = function
@@ -40,7 +40,7 @@ let backward flxx flx tape =
             tape)
         else (
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
-          let qtux = AD.Maths.(qux) in
+          let qtux = qux in
           let _K =
             try AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg with
             | e ->
