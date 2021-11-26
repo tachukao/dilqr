@@ -1,3 +1,3 @@
 (executables
- (names pendulum tests gs aircraft aircraft2 test)
+ (names pendulum aircraft)
  (libraries dilqr owl cmdargs owl-bmo))
