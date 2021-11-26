@@ -38,12 +38,7 @@ module P = struct
 
   let dyn_x = None
 
-  (* Some
-      (fun ~theta ~k:_ ~x ~u:_ ->
-        let theta = AD.Maths.get_slice [ []; [ 9; -1 ] ] theta in
-        let theta = AD.Maths.reshape theta [| 3; 3 |] in
-        let __a = AD.Maths.(cos x *@ theta) in
-        AD.Maths.((__a * dt) + AD.Mat.eye n)) *)
+
 
   let fl_x = None
   let fl_xx = None
@@ -55,22 +50,13 @@ module P = struct
   let dyn_u = None
   let rl_xx = None
 
-  (* Some
-      (fun ~theta ~k:_ ~x ->
-        let theta = AD.Maths.get_slice [ []; [ 0; 2 ] ] theta in
-        let theta = AD.Maths.sqr theta in
-        AD.Maths.(F 0. * theta * x)) *)
-
   let running_loss ~theta ~k:_k ~x ~u =
-    (* let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
-    let theta = AD.Maths.reshape theta [| 3; 3 |] in *)
+
     AD.Maths.(
       sum' (sqr (cos x)) + sum' x + (sum' (sqr theta) * (AD.F 0.1 * sum' (sqr u))))
 
 
   let final_loss ~theta ~k:_k ~x =
-    (* let theta = AD.Maths.get_slice [ []; [ 0; 8 ] ] theta in
-    let theta = AD.Maths.reshape theta [| 3; 3 |] in *)
     let theta = AD.Maths.sqr theta in
     ignore theta;
     AD.Maths.(F 0. * (sum' (sqr x) + sum' (sqr theta)))
@@ -100,7 +86,7 @@ let example () =
   let f us prms =
     (* let x0, theta = AD.Mat.ones 1 3, prms in *)
     let x0, theta = AD.Mat.ones 1 3, prms in
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
     let _ =
       Mat.save_txt
         ~out:(in_tmp_dir "taus_ilqr")
@@ -112,7 +98,6 @@ let example () =
               |]))
     in
     AD.Maths.l2norm' fin_taus
-    (* M.differentiable_loss ~theta fin_taus *)
   in
   let max_steps = 1
   and eta = AD.F 0.0001 in
@@ -136,7 +121,6 @@ let example () =
   grad_descent 0 AD.Maths.(F 0.1 * AD.Mat.gaussian 1 18) |> ignore
 
 
-(* problem in the dynamics somewhere, when theta is given the M.ilqr and the loss seem to differ? Maybe one of them doesn't take into account the theta value?*)
 let test_grad () =
   let module FD = Owl_algodiff_check.Make (Algodiff.D) in
   let n_samples = 1 in
@@ -156,8 +140,7 @@ let test_grad () =
   let f us prms =
     let x0 = AD.Mat.zeros 1 3 in
     let theta = prms in
-    (* let x0, theta = prms, AD.Mat.ones 1 3 in *)
-    let fin_taus = M.ilqr ~linesearch:false ~stop:(stop prms) ~us ~x0 ~theta () in
+    let fin_taus = M.ilqr ~linesearch:true ~stop:(stop prms) ~us ~x0 ~theta () in
     M.differentiable_loss ~theta fin_taus
   in
   let ff prms = f (List.init P.n_steps (fun _ -> AD.Mat.zeros 1 P.m)) prms in
