@@ -28,27 +28,8 @@ let backward flxx flx tape =
         let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.((quu + transpose quu) / F 2.) in
         let qtuu = AD.Maths.(quu + (b *@ (AD.F mu * AD.Mat.(eye n)) *@ bt)) in
-        (* let _ =
-          let k = C.rank in
-          Mat.save_txt
-            ~out:
-              (Printf.sprintf
-                 "/rds/user/mmcs3/hpc-work/_results/why_prep/checks_2/qtuu_%i"
-                 k)
-            (AD.unpack_arr qtuu);
-          C.root_perform (fun () ->
-              Mat.save_txt
-                ~out:
-                  (Printf.sprintf
-                     "/rds/user/mmcs3/hpc-work/_results/why_prep/checks_2/rlxx_%i"
-                     k)
-                (AD.unpack_arr rlxx))
-        in
-        (*  *)
-        Mat.save_txt ~out:"qtuu" (AD.unpack_arr qtuu);
-        Mat.save_txt ~out:"rlxx" (AD.unpack_arr rlxx); *)
         let _, svs, _ = Linalg.D.svd (AD.unpack_arr qtuu) in
-        if not (Mat.min' svs > 1E-8)
+        if not (Linalg.D.is_posdef (AD.unpack_arr qtuu) && Mat.min' svs > 1E-8)
         then (
           if mu > 0. then Printf.printf "Regularizing... mu = %f \n%!" mu;
           backward
@@ -57,7 +38,7 @@ let backward flxx flx tape =
             tape)
         else (
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
-          let qtux = AD.Maths.(qux + (b *@ (F 0. * AD.Mat.(eye n)) *@ at)) in
+          let qtux = qux in
           let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
           let _k =
             AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
