@@ -30,24 +30,8 @@ module P = struct
 
   let dyn_x = None
 
-  (* let f ~theta:_theta ~k:_k ~x ~u:_u =
-      (* let theta = theta |> AD.Maths.sum' in *)
-      let x1 = AD.Maths.get_slice [ []; [ 0 ] ] x |> AD.Maths.sum' in
-      AD.Maths.of_arrays
-        [| [| AD.F 1.; dt |]
-         ; [| AD.Maths.(g * cos x1 * dt); AD.Maths.(F 1. - (mu * dt)) |]
-        |]
-      |> AD.Maths.transpose
-    in
-    Some f *)
 
   let dyn_u = None
-
-  (* let f ~theta:_theta ~k:_k ~x:_x ~u:_u =
-      AD.Maths.of_arrays [| [| AD.F 0.; AD.F 0. |]; [| dt; AD.F 0. |] |]
-      |> AD.Maths.transpose
-    in
-    Some f *)
 
   let rl_xx = None
   let rl_ux = None
