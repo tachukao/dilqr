@@ -7,5 +7,3 @@ let print_dim str x =
   Printf.printf "\n %!"
 
 
-let tmp_dir = Cmdargs.(get_string "-tmp" |> force ~usage:"-tmp [tmp dir]")
-let in_tmp_dir = Printf.sprintf "%s/%s" tmp_dir
