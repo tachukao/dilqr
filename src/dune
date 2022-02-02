@@ -1,4 +1,4 @@
 (library
  (name dilqr)
  (public_name dilqr)
- (libraries owl owl-bmo cmdargs stdio comm))
+ (libraries owl owl-bmo cmdargs stdio))
