@@ -265,9 +265,9 @@ module Make (P : P) = struct
     let loss = loss ~theta in
     let update = update ~theta in
     fun ~stop x0 us ->
-      let rec loop iter us =
+      let rec loop iter us acc =
         if stop iter us
-        then us
+        then (us::acc)
         else (
           let f0 = loss x0 us in
           let update = update x0 us in
@@ -279,13 +279,13 @@ module Make (P : P) = struct
           if not linesearch
           then (
             let _, _, us = f 1. in
-            loop (succ iter) us)
+            loop (succ iter) us (us::acc))
           else (
             match Linesearch.backtrack f0 f with
-            | Some us -> loop (succ iter) us
+            | Some us -> loop (succ iter) us (us::acc)
             | None    -> failwith "linesearch did not converge"))
       in
-      loop 0 us
+      loop 0 us [us]
 
 
   let g2 =
@@ -444,9 +444,10 @@ module Make (P : P) = struct
     let g1 = g1 ~theta in
     fun ~stop ~us ~x0 () ->
       let ustars =
-        learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> List.map AD.primal'
+        learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> List.map (List.map (AD.primal'))
+      in let ustars_f = (List.hd ustars)
       in
-      let taus, big_fs, big_cs, cs, lambdas, fs = g1 ~x0:(AD.primal' x0) ~ustars in
+      let taus, big_fs, big_cs, cs, lambdas, fs = g1 ~x0:(AD.primal' x0) ~ustars:ustars_f in
       let inp = [| big_fs; big_cs; cs; fs; x0 |] in
-      g2 ~lambdas:(AD.primal' lambdas) ~taus:(AD.primal' taus) ~ustars ~theta:theta' inp
+      g2 ~lambdas:(AD.primal' lambdas) ~taus:(AD.primal' taus) ~ustars:ustars_f ~theta:theta' inp, (List.rev ustars)
 end
