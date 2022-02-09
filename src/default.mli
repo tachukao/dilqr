@@ -57,7 +57,7 @@ module Make (P : P) : sig
     -> stop:(int -> AD.t list -> bool)
     -> AD.t
     -> AD.t list
-    -> AD.t list
+    -> AD.t list list
 
   val ilqr
     :  ?linesearch:bool
@@ -66,7 +66,7 @@ module Make (P : P) : sig
     -> us:AD.t list
     -> x0:AD.t
     -> unit
-    -> AD.t
+    -> AD.t * AD.t list list
 
   val g1
     :  theta:P.theta
