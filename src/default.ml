@@ -246,8 +246,8 @@ module Make (P : P) = struct
               , AD.Maths.get_slice [ []; [ n; -1 ] ] tau )
             in
             if i = pred tf
-            then [| final_loss ~k:(succ i) ~x |]
-            else [| running_loss ~k:(succ i) ~x ~u |])
+            then [| final_loss ~k:(i) ~x |]
+            else [| running_loss ~k:(i) ~x ~u |])
           array_taus
       in
       AD.Maths.of_arrays mapped |> AD.Maths.sum'
