@@ -4,5 +4,5 @@ val backtrack
   -> ?tau:float
   -> ?beta:float
   -> float
-  -> (float -> float * float option * 'a )
+  -> (float -> float * float option * 'a * 'a )
   -> 'a option

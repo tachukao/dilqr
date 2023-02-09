@@ -11,6 +11,8 @@ type t =
   ; rlxx : AD.t
   ; rluu : AD.t
   ; rlux : AD.t
+  ; sig_uu : AD.t
+  ; sig_xx : AD.t
   ; f : AD.t
   }
 
@@ -18,8 +20,8 @@ val backward
   :  AD.t
   -> AD.t
   -> t list
-  -> (t * (AD.t * AD.t)) list * (float * float) * AD.t list
+  -> (t * (AD.t * AD.t * AD.t * AD.t)) list * (float * float)
 
-val forward : (t * (AD.t * AD.t)) list -> AD.t -> AD.t * t list
+val forward : (t * (AD.t * AD.t * AD.t * AD.t)) list -> AD.t -> AD.t -> AD.t * t list
 val adjoint : AD.t -> t list -> AD.t * AD.t list
 val adjoint_back : AD.t -> AD.t -> AD.t -> t list -> AD.t * AD.t list

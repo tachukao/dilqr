@@ -42,15 +42,18 @@ let forward_for_backward
           let rluu = rl_uu ~k ~x ~u
           and rlux = rl_ux ~k ~x ~u in
           let f = AD.Maths.(dyn ~k ~x ~u - (x *@ a) - (u *@ b)) in
-          let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux; f } in
+          let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux; f ; sig_uu = AD.Mat.zeros (AD.Mat.row_num b) (AD.Mat.row_num b)
+          ; sig_xx = AD.Mat.zeros (AD.Mat.row_num a) (AD.Mat.row_num a)} in
           let x = dyn ~k ~x ~u in
           succ k, x, s :: tape)
         (0, x0, [])
         us
     in
+    let u0 = List.hd (List.rev us) in 
     let flxx = fl_xx ~k:kf ~x:xf in
     let flx = fl_x ~k:kf ~x:xf in
-    flxx, flx, tape, xf
+    let p0 = rl_xx ~k:0 ~x:x0 ~u:u0 in 
+    flxx, flx, tape, xf, p0
 
 
 module type P = sig
@@ -183,23 +186,30 @@ module Make (P : P) = struct
     let dyn = dyn ~theta in
     fun x0 us ->
       (* xf, xs, us are in reverse *)
-      let vxxf, vxf, tape, _ = ffb x0 us in
-      let acc, (df1, df2), _ = Lqr.backward vxxf vxf tape in
+      let vxxf, vxf, tape, _, p0 = ffb x0 us in
+      let acc, (df1, df2) = Lqr.backward vxxf vxf tape in
       fun alpha ->
-        let _, _, uhats =
+        let _, _, _, uhats, sigma_us =
           List.fold_left
-            (fun (k, xhat, uhats) ((s : Lqr.t), (_K, _k)) ->
+            (fun (k, xhat, p_prev, uhats, sigma_us) ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
               let dx = AD.Maths.(xhat - s.x) in
+              let sigma_xx = AD.Maths.(p_prev + vxx) in 
+              let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
+              let p1 = AD.Maths.((transpose inv_a)*@(p_prev + s.rlxx)*@inv_a)
+            in let p2 = AD.Maths.(s.rluu + (transpose s.b)*@p1*@s.b)
+          in let new_p = AD.Maths.(p1 - p1*@s.b*@p2*@(transpose s.b)*@p1) in 
+          let sigma_uu = AD.Maths.(_K*@sigma_xx*@(transpose _K) + qtuu_inv) in 
               let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
               let uhat = AD.Maths.(s.u + du) in
               let uhats = uhat :: uhats in
+              let sigma_us = sigma_uu::sigma_us in 
               let xhat = dyn ~k ~x:xhat ~u:uhat in
-              succ k, xhat, uhats)
-            (0, x0, [])
+              succ k, xhat, new_p,  uhats, sigma_us)
+            (0, x0, p0, [], [])
             acc
         in
         let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
-        List.rev uhats, df
+        List.rev uhats, List.rev sigma_us, df
 
 
   let trajectory ~theta =
@@ -226,6 +236,22 @@ module Make (P : P) = struct
       in
       AD.Maths.(fl + rl) |> AD.unpack_flt
 
+      (* let sigma_uus ~theta =
+        let forward = forward ~theta in
+        let running_loss = running_loss ~theta in
+        let final_loss = final_loss ~theta in
+        fun x0 us ->
+          let kf, xf, xs, us = forward x0 us in
+          let fl = final_loss ~k:kf ~x:xf in
+          let _, rl =
+            List.fold_left2
+              (fun (k, rl) x u -> pred k, AD.Maths.(rl + running_loss ~k ~x ~u))
+              (kf - 1, AD.F 0.)
+              xs
+              us
+          in
+          AD.Maths.(fl + rl) |> AD.unpack_flt *)
+    
 
   let differentiable_loss ~theta =
     let final_loss = final_loss ~theta in
@@ -253,11 +279,6 @@ module Make (P : P) = struct
       AD.Maths.of_arrays mapped |> AD.Maths.sum'
 
 
-  let differentiable_quus ~theta x0 us =
-    let vxxf, vxf, tape, _ = ffb ~theta x0 us in
-    let _, _, quus = Lqr.backward vxxf vxf tape in
-    quus
-
 
   (* List.map (fun x -> AD.primal' x) quus *)
 
@@ -265,27 +286,27 @@ module Make (P : P) = struct
     let loss = loss ~theta in
     let update = update ~theta in
     fun ~stop x0 us ->
-      let rec loop iter us =
+      let rec loop iter us sig_us =
         if stop iter us
-        then us
+        then us, sig_us
         else (
           let f0 = loss x0 us in
           let update = update x0 us in
           let f alpha =
-            let us, df = update alpha in
+            let us, sig_us, df= update alpha in
             let fv = loss x0 us in
-            fv, Some df, us
+            fv, Some df, us, sig_us
           in
           if not linesearch
           then (
-            let _, _, us = f 1. in
-            loop (succ iter) us)
+            let _, _, us, sig_us = f 1. in
+            loop (succ iter) us sig_us)
           else (
             match Linesearch.backtrack f0 f with
-            | Some us -> loop (succ iter) us
+            | Some us -> loop (succ iter) us sig_us
             | None    -> failwith "linesearch did not converge"))
       in
-      loop 0 us
+      loop 0 us []
 
 
   let g2 =
@@ -322,10 +343,10 @@ module Make (P : P) = struct
       fun ~taus ~ustars ~lambdas ->
         let ds ~x0 ~tau_bar =
           (* recreating tape, pass as argument in the future *)
-          let flxx, _, tape, _ = ffb x0 ustars in
+          let flxx, _, tape, _, p0 = ffb x0 ustars in
           let flx, tape = swap_out_tape tape tau_bar in
-          let acc, _, _ = Lqr.backward flxx flx tape in
-          let ctbars_xf, ctbars_tape = Lqr.forward acc AD.Mat.(zeros 1 n) in
+          let acc, _ = Lqr.backward flxx flx tape in
+          let ctbars_xf, ctbars_tape = Lqr.forward acc AD.Mat.(zeros 1 n) p0 in
           let dlambda0, dlambdas = Lqr.adjoint_back ctbars_xf flxx flx ctbars_tape in
           let ctbars =
             List.map
@@ -388,7 +409,7 @@ module Make (P : P) = struct
   let g1 ~theta =
     let ffb = ffb ~theta in
     fun ~x0 ~ustars ->
-      let flxx, flx, tape, xf = ffb x0 ustars in
+      let flxx, flx, tape, xf, _p0 = ffb x0 ustars in
       let lambda0, lambdas = Lqr.adjoint flx tape in
       let lambdas = AD.Maths.stack ~axis:0 (Array.of_list (lambda0 :: lambdas)) in
       let big_taus = [ AD.Maths.concatenate ~axis:1 [| xf; AD.Mat.zeros 1 m |] ] in
@@ -443,8 +464,8 @@ module Make (P : P) = struct
     let theta' = primal' theta in
     let g1 = g1 ~theta in
     fun ~stop ~us ~x0 () ->
-      let ustars =
-        learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> List.map AD.primal'
+      let ustars, _sig_us =
+        learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> fun (u, s) -> List.map AD.primal' u, s
       in
       let taus, big_fs, big_cs, cs, lambdas, fs = g1 ~x0:(AD.primal' x0) ~ustars in
       let inp = [| big_fs; big_cs; cs; fs; x0 |] in

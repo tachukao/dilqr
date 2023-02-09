@@ -22,7 +22,7 @@ val forward_for_backward
   -> unit
   -> AD.t
   -> AD.t list
-  -> AD.t * AD.t * Lqr.t list * AD.t
+  -> AD.t * AD.t * Lqr.t list * AD.t  * AD.t
 
 module type P = sig
   type theta
@@ -49,7 +49,6 @@ module Make (P : P) : sig
   val trajectory : theta:P.theta -> AD.t -> AD.t list -> AD.t
   val loss : theta:P.theta -> AD.t -> AD.t list -> float
   val differentiable_loss : theta:P.theta -> AD.t -> AD.t
-  val differentiable_quus : theta:P.theta -> AD.t -> AD.t list -> AD.t list
 
   val learn
     :  ?linesearch:bool
@@ -57,7 +56,7 @@ module Make (P : P) : sig
     -> stop:(int -> AD.t list -> bool)
     -> AD.t
     -> AD.t list
-    -> AD.t list
+    -> AD.t list * AD.t list
 
   val ilqr
     :  ?linesearch:bool
