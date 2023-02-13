@@ -83,13 +83,19 @@ let forward acc x0 p0 =
     List.fold_left
       (fun (k, x, p_prev, tape) (s, (_K, _k, vxx, qtuu_inv)) ->
         let u = AD.Maths.((x *@ _K) + _k) in
-        let sigma_xx = AD.Maths.(p_prev + vxx) in 
+        let sigma_xx = 
+          try 
+          let q_xx = AD.Maths.(p_prev + vxx) in 
+        let q_txx = AD.Maths.(F 0.5 * (q_xx + (transpose q_xx)))
+      in 
+      AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) 
+    with |_ -> AD.Maths.(F 0. * s.a) in 
         let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
-        let p1 = AD.Maths.((transpose inv_a)*@(p_prev + s.rlxx)*@inv_a)
-      in let p2 = AD.Maths.(s.rluu + (transpose s.b)*@p1*@s.b)
-    in let new_p = AD.Maths.(p1 - p1*@s.b*@p2*@(transpose s.b)*@p1) in 
+        let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a))
+      in let p2 = AD.Maths.(s.rluu + ( s.b)*@p1*@(transpose s.b))
+    in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
         let new_x = AD.Maths.((x *@ s.a) + (u *@ s.b)) in
-        let sigma_uu = AD.Maths.(_K*@sigma_xx*@(transpose _K) + qtuu_inv) in 
+        let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 
         let new_s = { s with x; u; sig_uu = sigma_uu; sig_xx = sigma_xx} in
         succ k, new_x, new_p, new_s :: tape)
       (0, x0, p0, [])

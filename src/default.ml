@@ -189,27 +189,35 @@ module Make (P : P) = struct
       let vxxf, vxf, tape, _, p0 = ffb x0 us in
       let acc, (df1, df2) = Lqr.backward vxxf vxf tape in
       fun alpha ->
-        let _, _, _, uhats, sigma_us =
+        let _, _, _, uhats, sigma_xs, sigma_us =
           List.fold_left
-            (fun (k, xhat, p_prev, uhats, sigma_us) ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
+            (fun (k, xhat, p_prev, uhats, sigma_xs, sigma_us) ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
               let dx = AD.Maths.(xhat - s.x) in
-              let sigma_xx = AD.Maths.(p_prev + vxx) in 
+              let sigma_xx = 
+                try 
+                let q_xx = AD.Maths.(p_prev + vxx) in 
+              let q_txx = AD.Maths.(F 0.5 * (q_xx + (transpose q_xx)))
+            in 
+            AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) 
+          with |_ -> AD.Maths.(F 0. * s.a) in 
               let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
-              let p1 = AD.Maths.((transpose inv_a)*@(p_prev + s.rlxx)*@inv_a)
-            in let p2 = AD.Maths.(s.rluu + (transpose s.b)*@p1*@s.b)
-          in let new_p = AD.Maths.(p1 - p1*@s.b*@p2*@(transpose s.b)*@p1) in 
-          let sigma_uu = AD.Maths.(_K*@sigma_xx*@(transpose _K) + qtuu_inv) in 
+              let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a)) in 
+            let p2 = AD.Maths.(s.rluu + (s.b)*@p1*@(transpose s.b))
+          in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
+          let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 
+       
               let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
               let uhat = AD.Maths.(s.u + du) in
               let uhats = uhat :: uhats in
+              let sigma_xs = sigma_xx::sigma_xs in 
               let sigma_us = sigma_uu::sigma_us in 
               let xhat = dyn ~k ~x:xhat ~u:uhat in
-              succ k, xhat, new_p,  uhats, sigma_us)
-            (0, x0, p0, [], [])
+              succ k, xhat, new_p,  uhats, sigma_xs, sigma_us)
+            (0, x0, p0, [], [], [])
             acc
         in
         let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
-        List.rev uhats, List.rev sigma_us, df
+        List.rev uhats, List.rev sigma_xs, List.rev sigma_us, df
 
 
   let trajectory ~theta =
@@ -286,27 +294,28 @@ module Make (P : P) = struct
     let loss = loss ~theta in
     let update = update ~theta in
     fun ~stop x0 us ->
-      let rec loop iter us sig_us =
+      let rec loop iter us sig_xs sig_us =
         if stop iter us
-        then us, sig_us
+        then  
+           us, sig_xs, sig_us
         else (
           let f0 = loss x0 us in
           let update = update x0 us in
           let f alpha =
-            let us, sig_us, df= update alpha in
+            let us, sig_xs, sig_us, df= update alpha in
             let fv = loss x0 us in
-            fv, Some df, us, sig_us
+            fv, Some df, us, sig_xs, sig_us
           in
           if not linesearch
           then (
-            let _, _, us, sig_us = f 1. in
-            loop (succ iter) us sig_us)
+            let _, _, us, sig_xs, sig_us = f 1. in
+            loop (succ iter) us sig_xs sig_us)
           else (
             match Linesearch.backtrack f0 f with
-            | Some us -> loop (succ iter) us sig_us
+            | Some (us, sig_xs, sig_us) -> loop (succ iter) us sig_xs sig_us
             | None    -> failwith "linesearch did not converge"))
       in
-      loop 0 us []
+      loop 0 us [] []
 
 
   let g2 =
@@ -464,10 +473,10 @@ module Make (P : P) = struct
     let theta' = primal' theta in
     let g1 = g1 ~theta in
     fun ~stop ~us ~x0 () ->
-      let ustars, _sig_us =
-        learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> fun (u, s) -> List.map AD.primal' u, s
+      let ustars, _sig_xs, _sig_us =
+      learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> fun (u, _sig_xs, _sig_us) -> List.map AD.primal' u, _sig_xs, _sig_us
       in
       let taus, big_fs, big_cs, cs, lambdas, fs = g1 ~x0:(AD.primal' x0) ~ustars in
       let inp = [| big_fs; big_cs; cs; fs; x0 |] in
-      g2 ~lambdas:(AD.primal' lambdas) ~taus:(AD.primal' taus) ~ustars ~theta:theta' inp
+      g2 ~lambdas:(AD.primal' lambdas) ~taus:(AD.primal' taus) ~ustars ~theta:theta' inp, _sig_xs, _sig_us
 end
