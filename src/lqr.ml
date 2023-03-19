@@ -19,7 +19,7 @@ type t =
 let backward flxx flx tape =
   (* let n = AD.(shape flx).(1) in  *)
   let kf = List.length tape in
-  let k, _, _, df1, df2, acc =
+  let k, vxx0, _, df1, df2, acc =
     let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc) = function
     (*also save quu_inv*)
       | ({ x = _; u = _; a; b; rlx; rlu; rlxx; rluu; rlux; sig_uu = _; sig_xx = _;  f = _} as s) :: tl ->
@@ -69,7 +69,7 @@ let backward flxx flx tape =
     backward (1., 0.) (kf - 1, flxx, flx, AD.F 0., AD.F 0., []) tape
   in
   assert (k = -1);
-  acc, (AD.unpack_flt df1, AD.unpack_flt df2)
+  acc, (AD.unpack_flt df1, AD.unpack_flt df2, vxx0)
 
 
 let forward acc x0 p0 =
@@ -92,7 +92,8 @@ let forward acc x0 p0 =
     with |_ -> AD.Maths.(F 0. * s.a) in 
         let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
         let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a))
-      in let p2 = AD.Maths.(s.rluu + ( s.b)*@p1*@(transpose s.b))
+      in let p2_inv = AD.Maths.(s.rluu + ( s.b)*@p1*@(transpose s.b))
+    in let p2 = AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.a)) 
     in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
         let new_x = AD.Maths.((x *@ s.a) + (u *@ s.b)) in
         let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 

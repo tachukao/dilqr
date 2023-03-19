@@ -20,7 +20,7 @@ val backward
   :  AD.t
   -> AD.t
   -> t list
-  -> (t * (AD.t * AD.t * AD.t * AD.t)) list * (float * float)
+  -> (t * (AD.t * AD.t * AD.t * AD.t)) list * (float * float * AD.t)
 
 val forward : (t * (AD.t * AD.t * AD.t * AD.t)) list -> AD.t -> AD.t -> AD.t * t list
 val adjoint : AD.t -> t list -> AD.t * AD.t list

@@ -186,8 +186,8 @@ module Make (P : P) = struct
     let dyn = dyn ~theta in
     fun x0 us ->
       (* xf, xs, us are in reverse *)
-      let vxxf, vxf, tape, _, p0 = ffb x0 us in
-      let acc, (df1, df2) = Lqr.backward vxxf vxf tape in
+      let vxxf, vxf, tape, _, _p0 = ffb x0 us in
+      let acc, (df1, df2, vxx0) = Lqr.backward vxxf vxf tape in
       fun alpha ->
         let _, _, _, uhats, sigma_xs, sigma_us =
           List.fold_left
@@ -202,7 +202,8 @@ module Make (P : P) = struct
           with |_ -> AD.Maths.(F 0. * s.a) in 
               let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
               let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a)) in 
-            let p2 = AD.Maths.(s.rluu + (s.b)*@p1*@(transpose s.b))
+            let p2_inv = AD.Maths.(s.rluu + (s.b)*@p1*@(transpose s.b))
+        in let p2 = AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.a)) 
           in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
           let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 
        
@@ -213,7 +214,7 @@ module Make (P : P) = struct
               let sigma_us = sigma_uu::sigma_us in 
               let xhat = dyn ~k ~x:xhat ~u:uhat in
               succ k, xhat, new_p,  uhats, sigma_xs, sigma_us)
-            (0, x0, p0, [], [], [])
+            (0, x0, vxx0, [], [], [])
             acc
         in
         let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
