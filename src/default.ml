@@ -200,11 +200,11 @@ module Make (P : P) = struct
             in 
             AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) 
           with |e -> Stdio.printf "expection in dilqr %s" (Base.Exn.to_string e); 
-          AD.Maths.(F 0. * s.a) in 
+          (AD.Mat.eye (AD.Mat.row_num s.a)) in 
               let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
               let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a)) in 
             let p2_inv = AD.Maths.(s.rluu + (s.b)*@p1*@(transpose s.b))
-        in let p2 =   try AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.a))  with |e -> Stdio.printf "expection in dilqr %s" (Base.Exn.to_string e); (AD.Maths.(F 1E-3 * (AD.Mat.eye (AD.Mat.row_num s.a))))
+        in let p2 =   try AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.a))  with |e -> Stdio.printf "expection in dilqr %s" (Base.Exn.to_string e); (AD.Mat.eye (AD.Mat.row_num s.a))
           in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
           let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 
        
