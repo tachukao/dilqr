@@ -21,8 +21,10 @@ let backward flxx flx tape =
   let kf = List.length tape in
   let k, vxx0, _, df1, df2, acc =
     let rec backward (delta, mu) (k, vxx, vx, df1, df2, acc) = function
-    (*also save quu_inv*)
-      | ({ x = _; u = _; a; b; rlx; rlu; rlxx; rluu; rlux; sig_uu = _; sig_xx = _;  f = _} as s) :: tl ->
+      (*also save quu_inv*)
+      | ({ x = _; u = _; a; b; rlx; rlu; rlxx; rluu; rlux; sig_uu = _; sig_xx = _; f = _ }
+        as s)
+        :: tl ->
         let at = AD.Maths.transpose a in
         let bt = AD.Maths.transpose b in
         let m = AD.Mat.row_num b in
@@ -38,27 +40,25 @@ let backward flxx flx tape =
                AD.Maths.(quu + ((AD.F 1. * AD.Mat.eye m) + (AD.F mu * (b *@ bt)))))
         in
         if not (Linalg.D.is_posdef (AD.unpack_arr qtuu) && Mat.min' svs -. 1. > 1E-8)
-        then (
+        then
           (*if mu > 0. & mu < 1E-8 then Printf.printf "Regularizing... mu = %f \n%!" mu;*)
           backward
             (Regularisation.increase (delta, mu))
             (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
-            tape)
+            tape
         else (
           let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
           let qtux = qux in
-          let _K =
-            AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg
-          in
+          let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
           let _k =
-              AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
-              |> AD.Maths.transpose
-              |> AD.Maths.neg
+            AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
+            |> AD.Maths.transpose
+            |> AD.Maths.neg
           in
           let vxx = AD.Maths.(qxx + transpose (_K *@ qux)) in
           let vxx = AD.Maths.((vxx + transpose vxx) / F 2.) in
           let vx = AD.Maths.(qx + (qu *@ transpose _K)) in
-          let qtuu_inv = AD.Linalg.(linsolve qtuu (AD.Mat.eye m)) in 
+          let qtuu_inv = AD.Linalg.(linsolve qtuu (AD.Mat.eye m)) in
           (*here quu_inv has regularization*)
           let acc = (s, (_K, _k, vxx, qtuu_inv)) :: acc in
           let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
@@ -74,7 +74,7 @@ let backward flxx flx tape =
 
 let forward acc x0 p0 =
   let _, xf, _, tape =
-  (*add computation of P : 
+    (*add computation of P : 
      P1 = (tranpose inv_a)*@(P_prev + C_xx) @ inv_a
      P2 = (C_uu + (transpose B)*@P1*@B))
      P - P1 - P1*@B*@P2*@(transpose B)*@P1
@@ -83,21 +83,37 @@ let forward acc x0 p0 =
     List.fold_left
       (fun (k, x, p_prev, tape) (s, (_K, _k, vxx, qtuu_inv)) ->
         let u = AD.Maths.((x *@ _K) + _k) in
-        let sigma_xx = 
-          try 
-          let q_xx = AD.Maths.(p_prev + vxx) in 
-        let q_txx = AD.Maths.(F 0.5 * (q_xx + (transpose q_xx)))
-      in 
-      AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) 
-    with |_ -> (AD.Mat.eye (AD.Mat.row_num s.a)) in 
-        let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
-        let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a))
-      in  let p2_inv = AD.Maths.(s.rluu + (s.b)*@p1*@(transpose s.b))
-    in let p2 =   try AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.a))  with |e -> Stdio.printf "expection in dilqr %s" (Base.Exn.to_string e); (AD.Mat.eye (AD.Mat.row_num s.a))
-    in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
+        let _n = AD.Mat.row_num s.a in
+        let q_xx = AD.Maths.(p_prev + vxx) in
+        let q_txx = AD.Maths.(F 0.5 * (q_xx + transpose q_xx)) in
+        let sigma_xx =
+          try AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) with
+          | _ ->
+            (* let _, ss = Linalg.D.eig (AD.unpack_arr q_txx) in
+            let ss = Dense.Matrix.Z.re ss in
+            let _ = Mat.print ss in
+            let min_ss = Float.min (Mat.min' ss) 0. in
+            let _ = Stdio.printf "regularization in LQR : min ss %f" min_ss in
+            AD.Linalg.linsolve
+              AD.Maths.((F 1E-8 * AD.Mat.eye n) + q_txx) *)
+            AD.Mat.eye (AD.Mat.row_num s.a)
+        in
+        let inv_a = AD.Linalg.linsolve s.a (AD.Mat.eye (AD.Mat.row_num s.a)) in
+        let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
+        let p2_inv = AD.Maths.(s.rluu + (s.b *@ p1 *@ transpose s.b)) in
+        let p2 =
+          try AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.b)) with
+          | _ ->
+            (* Stdio.printf "expection in dLQR %s" (Base.Exn.to_string e);
+             let _, ss = Linalg.D.eig (AD.unpack_arr p2_inv) in
+            let ss = Dense.Matrix.Z.re ss in
+            let _ = Mat.print ss in *)
+            AD.Linalg.linsolve s.rluu (AD.Mat.eye (AD.Mat.row_num s.b))
+        in
+        let new_p = AD.Maths.(p1 - (p1 *@ transpose s.b *@ p2 *@ s.b *@ p1)) in
         let new_x = AD.Maths.((x *@ s.a) + (u *@ s.b)) in
-        let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 
-        let new_s = { s with x; u; sig_uu = sigma_uu; sig_xx = sigma_xx} in
+        let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
+        let new_s = { s with x; u; sig_uu = sigma_uu; sig_xx = sigma_xx } in
         succ k, new_x, new_p, new_s :: tape)
       (0, x0, p0, [])
       acc
@@ -108,7 +124,19 @@ let forward acc x0 p0 =
 let adjoint lambf tape =
   List.fold_left
     (fun (lamb, lambs)
-         { x = _; u = _; a; b = _; rlx; rlu = _; rlxx = _; rluu = _; rlux = _; sig_uu = _ ; sig_xx = _;  f = _ } ->
+         { x = _
+         ; u = _
+         ; a
+         ; b = _
+         ; rlx
+         ; rlu = _
+         ; rlxx = _
+         ; rluu = _
+         ; rlux = _
+         ; sig_uu = _
+         ; sig_xx = _
+         ; f = _
+         } ->
       let lambs = lamb :: lambs in
       let lamb = AD.Maths.((lamb *@ transpose a) + rlx) in
       lamb, lambs)

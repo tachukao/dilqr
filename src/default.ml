@@ -42,17 +42,31 @@ let forward_for_backward
           let rluu = rl_uu ~k ~x ~u
           and rlux = rl_ux ~k ~x ~u in
           let f = AD.Maths.(dyn ~k ~x ~u - (x *@ a) - (u *@ b)) in
-          let s = Lqr.{ x; u; a; b; rlx; rlu; rlxx; rluu; rlux; f ; sig_uu = AD.Mat.zeros (AD.Mat.row_num b) (AD.Mat.row_num b)
-          ; sig_xx = AD.Mat.zeros (AD.Mat.row_num a) (AD.Mat.row_num a)} in
+          let s =
+            Lqr.
+              { x
+              ; u
+              ; a
+              ; b
+              ; rlx
+              ; rlu
+              ; rlxx
+              ; rluu
+              ; rlux
+              ; f
+              ; sig_uu = AD.Mat.zeros (AD.Mat.row_num b) (AD.Mat.row_num b)
+              ; sig_xx = AD.Mat.zeros (AD.Mat.row_num a) (AD.Mat.row_num a)
+              }
+          in
           let x = dyn ~k ~x ~u in
           succ k, x, s :: tape)
         (0, x0, [])
         us
     in
-    let u0 = List.hd (List.rev us) in 
+    let u0 = List.hd (List.rev us) in
     let flxx = fl_xx ~k:kf ~x:xf in
     let flx = fl_x ~k:kf ~x:xf in
-    let p0 = rl_xx ~k:0 ~x:x0 ~u:u0 in 
+    let p0 = rl_xx ~k:0 ~x:x0 ~u:u0 in
     flxx, flx, tape, xf, p0
 
 
@@ -187,35 +201,66 @@ module Make (P : P) = struct
     fun x0 us ->
       (* xf, xs, us are in reverse *)
       let vxxf, vxf, tape, _, _p0 = ffb x0 us in
-      let acc, (df1, df2, vxx0) = Lqr.backward vxxf vxf tape in
+      let acc, (df1, df2, _vxx0) = Lqr.backward vxxf vxf tape in
       fun alpha ->
         let _, _, _, uhats, sigma_xs, sigma_us =
           List.fold_left
-            (fun (k, xhat, p_prev, uhats, sigma_xs, sigma_us) ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
+            (fun (k, xhat, p_prev, uhats, sigma_xs, sigma_us)
+                 ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
               let dx = AD.Maths.(xhat - s.x) in
-              let sigma_xx = 
-                try 
-                let q_xx = AD.Maths.(p_prev + vxx) in 
-              let q_txx = AD.Maths.(F 0.5 * (q_xx + (transpose q_xx)))
-            in 
-            AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) 
-          with |e -> Stdio.printf "expection in dilqr %s" (Base.Exn.to_string e); 
-          (AD.Mat.eye (AD.Mat.row_num s.a)) in 
-              let inv_a = AD.Linalg.linsolve (s.a) (AD.Mat.eye (AD.Mat.row_num s.a)) in 
-              let p1 = AD.Maths.((inv_a)*@(p_prev + s.rlxx)*@(transpose inv_a)) in 
-            let p2_inv = AD.Maths.(s.rluu + (s.b)*@p1*@(transpose s.b))
-        in let p2 =   try AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.a))  with |e -> Stdio.printf "expection in dilqr %s" (Base.Exn.to_string e); (AD.Mat.eye (AD.Mat.row_num s.a))
-          in let new_p = AD.Maths.(p1 - p1*@(transpose s.b)*@p2*@(s.b)*@p1) in 
-          let sigma_uu = AD.Maths.((transpose _K)*@sigma_xx*@( _K) + qtuu_inv) in 
-       
+              (* let _ = AD.Mat.print s.x in *)
+              let n = AD.Mat.row_num s.a in
+              let q_xx = AD.Maths.(p_prev + vxx) in
+              let q_txx = AD.Maths.(F 0.5 * (q_xx + transpose q_xx)) in
+              let sigma_xx =
+                try
+                  AD.Linalg.linsolve
+                    AD.Maths.((F 1E-6 * AD.Mat.eye n) + q_txx)
+                    (AD.Mat.eye (AD.Mat.row_num s.a))
+                with
+                | _ ->
+                  (* let _, ss = Linalg.D.eig (AD.unpack_arr q_txx) in
+                  let ss = Dense.Matrix.Z.re ss in
+                  let _ = Mat.print ss in
+                  let min_ss = Float.min (Mat.min' ss) 0. in *)
+                  let _ =
+                    Stdio.printf "iter %i failed in dilqr cov : replace with vxx" k
+                  in
+                  AD.Linalg.linsolve vxx (AD.Mat.eye (AD.Mat.row_num s.a))
+              in
+              let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
+              let inv_a = AD.Linalg.linsolve s.a (AD.Mat.eye n) in
+              let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
+              let p1 = AD.Maths.(F 0.5 * (transpose p1 + p1)) in
+              let p2_inv =
+                AD.Maths.(s.rluu + (s.b *@ p1 *@ transpose s.b))
+                (* in let _ = Stdio.printf "%i %i %i %i %i %i %!" (AD.Mat.row_num p1) (AD.Mat.col_num p1) (AD.Mat.col_num p2_inv) (AD.Mat.row_num p2_inv) (AD.Mat.row_num s.rluu) (AD.Mat.col_num s.rluu)  *)
+              in
+              let p2 =
+                try
+                  AD.Linalg.linsolve
+                    AD.Maths.(p2_inv + (F 1E-6 * AD.Mat.eye (AD.Mat.row_num s.b)))
+                    (AD.Mat.eye (AD.Mat.row_num s.b))
+                with
+                | _ ->
+                  (* Stdio.printf "expection in dLQR %s" (Base.Exn.to_string e);
+                   let _, ss = Linalg.D.eig (AD.unpack_arr p2_inv) in
+                  let ss = Dense.Matrix.Z.re ss in
+                  let _ = Mat.print ss in *)
+                  let _ =
+                    Stdio.printf "iter %i failed in dilqr cov : replace with rluu" k
+                  in
+                  AD.Linalg.linsolve s.rluu (AD.Mat.eye (AD.Mat.row_num s.b))
+              in
+              let new_p = AD.Maths.(p1 - (p1 *@ transpose s.b *@ p2 *@ s.b *@ p1)) in
               let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
               let uhat = AD.Maths.(s.u + du) in
               let uhats = uhat :: uhats in
-              let sigma_xs = sigma_xx::sigma_xs in 
-              let sigma_us = sigma_uu::sigma_us in 
+              let sigma_xs = sigma_xx :: sigma_xs in
+              let sigma_us = sigma_uu :: sigma_us in
               let xhat = dyn ~k ~x:xhat ~u:uhat in
-              succ k, xhat, new_p,  uhats, sigma_xs, sigma_us)
-            (0, x0, vxx0, [], [], [])
+              succ k, xhat, new_p, uhats, sigma_xs, sigma_us)
+            (0, x0, _p0, [], [], [])
             acc
         in
         let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
@@ -246,7 +291,8 @@ module Make (P : P) = struct
       in
       AD.Maths.(fl + rl) |> AD.unpack_flt
 
-      (* let sigma_uus ~theta =
+
+  (* let sigma_uus ~theta =
         let forward = forward ~theta in
         let running_loss = running_loss ~theta in
         let final_loss = final_loss ~theta in
@@ -261,7 +307,6 @@ module Make (P : P) = struct
               us
           in
           AD.Maths.(fl + rl) |> AD.unpack_flt *)
-    
 
   let differentiable_loss ~theta =
     let final_loss = final_loss ~theta in
@@ -282,12 +327,11 @@ module Make (P : P) = struct
               , AD.Maths.get_slice [ []; [ n; -1 ] ] tau )
             in
             if i = pred tf
-            then [| final_loss ~k:(i) ~x |]
-            else [| running_loss ~k:(i) ~x ~u |])
+            then [| final_loss ~k:i ~x |]
+            else [| running_loss ~k:i ~x ~u |])
           array_taus
       in
       AD.Maths.of_arrays mapped |> AD.Maths.sum'
-
 
 
   (* List.map (fun x -> AD.primal' x) quus *)
@@ -298,13 +342,12 @@ module Make (P : P) = struct
     fun ~stop x0 us ->
       let rec loop iter us sig_xs sig_us =
         if stop iter us
-        then  
-           us, sig_xs, sig_us
+        then us, sig_xs, sig_us
         else (
           let f0 = loss x0 us in
           let update = update x0 us in
           let f alpha =
-            let us, sig_xs, sig_us, df= update alpha in
+            let us, sig_xs, sig_us, df = update alpha in
             let fv = loss x0 us in
             fv, Some df, us, sig_xs, sig_us
           in
@@ -315,7 +358,7 @@ module Make (P : P) = struct
           else (
             match Linesearch.backtrack f0 f with
             | Some (us, sig_xs, sig_us) -> loop (succ iter) us sig_xs sig_us
-            | None    -> failwith "linesearch did not converge"))
+            | None -> failwith "linesearch did not converge"))
       in
       loop 0 us [] []
 
@@ -476,9 +519,12 @@ module Make (P : P) = struct
     let g1 = g1 ~theta in
     fun ~stop ~us ~x0 () ->
       let ustars, _sig_xs, _sig_us =
-      learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us |> fun (u, _sig_xs, _sig_us) -> List.map AD.primal' u, _sig_xs, _sig_us
+        learn ~linesearch ~theta:theta' ~stop AD.(primal' x0) us
+        |> fun (u, _sig_xs, _sig_us) -> List.map AD.primal' u, _sig_xs, _sig_us
       in
       let taus, big_fs, big_cs, cs, lambdas, fs = g1 ~x0:(AD.primal' x0) ~ustars in
       let inp = [| big_fs; big_cs; cs; fs; x0 |] in
-      g2 ~lambdas:(AD.primal' lambdas) ~taus:(AD.primal' taus) ~ustars ~theta:theta' inp, _sig_xs, _sig_us
+      ( g2 ~lambdas:(AD.primal' lambdas) ~taus:(AD.primal' taus) ~ustars ~theta:theta' inp
+      , _sig_xs
+      , _sig_us )
 end
