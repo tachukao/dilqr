@@ -250,7 +250,7 @@ module Make (P : P) = struct
                   let _ =
                     Stdio.printf "iter %i failed in dilqr cov : replace with rluu" k
                   in
-                  AD.Linalg.linsolve s.rluu (AD.Mat.eye (AD.Mat.row_num s.b))
+                  qtuu_inv
               in
               let new_p = AD.Maths.(p1 - (p1 *@ transpose s.b *@ p2 *@ s.b *@ p1)) in
               let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
