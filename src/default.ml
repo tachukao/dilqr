@@ -208,25 +208,21 @@ module Make (P : P) = struct
             (fun (k, xhat, p_prev, uhats, sigma_xs, sigma_us)
                  ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
               let dx = AD.Maths.(xhat - s.x) in
-              (* let _ = AD.Mat.print s.x in *)
               let n = AD.Mat.row_num s.a in
               let q_xx = AD.Maths.(p_prev + vxx) in
               let q_txx = AD.Maths.(F 0.5 * (q_xx + transpose q_xx)) in
-              let sigma_xx =
+              let p_prev, sigma_xx =
                 try
-                  AD.Linalg.linsolve
-                    AD.Maths.((F 1E-6 * AD.Mat.eye n) + q_txx)
-                    (AD.Mat.eye (AD.Mat.row_num s.a))
+                  ( p_prev
+                  , AD.Linalg.linsolve
+                      AD.Maths.((F 1E-4 * AD.Mat.eye n) + q_txx)
+                      (AD.Mat.eye (AD.Mat.row_num s.a)) )
                 with
                 | _ ->
-                  (* let _, ss = Linalg.D.eig (AD.unpack_arr q_txx) in
-                  let ss = Dense.Matrix.Z.re ss in
-                  let _ = Mat.print ss in
-                  let min_ss = Float.min (Mat.min' ss) 0. in *)
-                  let _ =
-                    Stdio.printf "iter %i failed in dilqr cov : replace with vxx" k
-                  in
-                  AD.Linalg.linsolve vxx (AD.Mat.eye (AD.Mat.row_num s.a))
+                  ( AD.Maths.(F 1E-3 * AD.Mat.eye n)
+                  , AD.Linalg.linsolve
+                      AD.Maths.(vxx + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.a)))
+                      (AD.Mat.eye (AD.Mat.row_num s.a)) )
               in
               let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
               let inv_a = AD.Linalg.linsolve s.a (AD.Mat.eye n) in
@@ -239,7 +235,7 @@ module Make (P : P) = struct
               let p2 =
                 try
                   AD.Linalg.linsolve
-                    AD.Maths.(p2_inv + (F 1E-6 * AD.Mat.eye (AD.Mat.row_num s.b)))
+                    AD.Maths.(p2_inv + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)))
                     (AD.Mat.eye (AD.Mat.row_num s.b))
                 with
                 | _ ->
@@ -248,9 +244,13 @@ module Make (P : P) = struct
                   let ss = Dense.Matrix.Z.re ss in
                   let _ = Mat.print ss in *)
                   let _ =
-                    Stdio.printf "iter %i failed in dilqr cov : replace with rluu" k
+                    Stdio.printf "iter %i failed in dilqr cov : replace with rluu_inv" k
                   in
-                  qtuu_inv
+                  (* let norm_p2 = AD.Maths.l2norm' p2_inv in
+                  AD.Maths.(AD.Mat.eye (AD.Mat.row_num s.b) / (F 1E-4 + norm_p2)) *)
+                  AD.Linalg.linsolve
+                    AD.Maths.((F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)) + s.rluu)
+                    (AD.Mat.eye (AD.Mat.row_num s.b))
               in
               let new_p = AD.Maths.(p1 - (p1 *@ transpose s.b *@ p2 *@ s.b *@ p1)) in
               let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
