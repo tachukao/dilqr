@@ -4,7 +4,9 @@ open AD.Builder
 
 type 'a t = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
 type 'a s = theta:'a -> k:int -> x:AD.t -> AD.t
+type 'a v = theta:'a -> x:AD.t -> AD.t
 type 'a final_loss = theta:'a -> k:int -> x:AD.t -> AD.t
+type 'a init_loss = theta:'a -> x:AD.t -> AD.t
 type 'a running_loss = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
 
 let forward_for_backward
@@ -18,6 +20,8 @@ let forward_for_backward
     ~rl_x
     ~fl_xx
     ~fl_x
+    ~l_x0
+    ~l_xx0
     ~dyn
   =
   let dyn = dyn ~theta
@@ -30,6 +34,8 @@ let forward_for_backward
   and rl_ux = rl_ux ~theta in
   let fl_xx = fl_xx ~theta in
   let fl_x = fl_x ~theta in
+  let l_xx0 = l_xx0 ~theta in
+  let l_x0 = l_x0 ~theta in
   fun () x0 us ->
     let kf, xf, tape =
       List.fold_left
@@ -38,7 +44,11 @@ let forward_for_backward
           and b = dyn_u ~k ~x ~u
           and rlx = rl_x ~k ~x ~u
           and rlu = rl_u ~k ~x ~u in
-          let rlxx = rl_xx ~k ~x ~u in
+          let rlx, rlxx =
+            if Int.(k = 0)
+            then AD.Maths.(rl_x ~k ~x ~u + l_x0 ~x), AD.Maths.(rl_xx ~k ~x ~u + l_xx0 ~x)
+            else AD.Maths.(rl_x ~k ~x ~u), AD.Maths.(rl_xx ~k ~x ~u)
+          in
           let rluu = rl_uu ~k ~x ~u
           and rlux = rl_ux ~k ~x ~u in
           let f = AD.Maths.(dyn ~k ~x ~u - (x *@ a) - (u *@ b)) in
@@ -66,7 +76,7 @@ let forward_for_backward
     let u0 = List.hd (List.rev us) in
     let flxx = fl_xx ~k:kf ~x:xf in
     let flx = fl_x ~k:kf ~x:xf in
-    let p0 = rl_xx ~k:0 ~x:x0 ~u:u0 in
+    let p0 = AD.Maths.(rl_xx ~k:0 ~x:x0 ~u:u0 + l_xx0 ~x:x0) in
     flxx, flx, tape, xf, p0
 
 
@@ -201,7 +211,7 @@ module Make (P : P) = struct
     fun x0 us ->
       (* xf, xs, us are in reverse *)
       let vxxf, vxf, tape, _, _p0 = ffb x0 us in
-      let acc, (df1, df2, _vxx0) = Lqr.backward vxxf vxf tape in
+      let acc, (df1, df2, vxx0) = Lqr.backward vxxf vxf tape in
       fun alpha ->
         let _, _, _, uhats, sigma_xs, sigma_us =
           List.fold_left
@@ -221,7 +231,7 @@ module Make (P : P) = struct
                 | _ ->
                   ( AD.Maths.(F 1E-3 * AD.Mat.eye n)
                   , AD.Linalg.linsolve
-                      AD.Maths.(vxx + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.a)))
+                      AD.Maths.(vxx + (F 1E-3 * AD.Mat.eye (AD.Mat.row_num s.a)))
                       (AD.Mat.eye (AD.Mat.row_num s.a)) )
               in
               let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
@@ -263,8 +273,9 @@ module Make (P : P) = struct
             (0, x0, _p0, [], [], [])
             acc
         in
+        let new_x0 = AD.Maths.(linsolve vxx0)
         let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
-        List.rev uhats, List.rev sigma_xs, List.rev sigma_us, df
+        new_x0, List.rev uhats, List.rev sigma_xs, List.rev sigma_us, df
 
 
   let trajectory ~theta =
@@ -340,27 +351,28 @@ module Make (P : P) = struct
     let loss = loss ~theta in
     let update = update ~theta in
     fun ~stop x0 us ->
-      let rec loop iter us sig_xs sig_us =
+      let rec loop iter x0 us sig_xs sig_us =
         if stop iter us
         then us, sig_xs, sig_us
         else (
           let f0 = loss x0 us in
           let update = update x0 us in
           let f alpha =
-            let us, sig_xs, sig_us, df = update alpha in
+            let new_x0, us, sig_xs, sig_us, df = update alpha in
             let fv = loss x0 us in
-            fv, Some df, us, sig_xs, sig_us
+            fv, Some df, new_x0, us, sig_xs, sig_us
           in
           if not linesearch
           then (
-            let _, _, us, sig_xs, sig_us = f 1. in
-            loop (succ iter) us sig_xs sig_us)
+            let _, _, new_x0, us, sig_xs, sig_us = f 1. in
+            loop (succ iter) new_x0 us sig_xs sig_us)
           else (
             match Linesearch.backtrack f0 f with
-            | Some (us, sig_xs, sig_us) -> loop (succ iter) us sig_xs sig_us
+            | Some (new_x0, us, sig_xs, sig_us) ->
+              loop (succ iter) new_x0 us sig_xs sig_us
             | None -> failwith "linesearch did not converge"))
       in
-      loop 0 us [] []
+      loop 0 x0 us [] []
 
 
   let g2 =

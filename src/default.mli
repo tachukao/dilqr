@@ -4,8 +4,10 @@ open Bmo
 
 type 'a t = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
 type 'a s = theta:'a -> k:int -> x:AD.t -> AD.t
+type 'a v = theta:'a -> x:AD.t -> AD.t
 type 'a final_loss = theta:'a -> k:int -> x:AD.t -> AD.t
 type 'a running_loss = theta:'a -> k:int -> x:AD.t -> u:AD.t -> AD.t
+type 'a init_loss = theta:'a -> x:AD.t -> AD.t
 
 val forward_for_backward
   :  theta:'a
@@ -18,11 +20,13 @@ val forward_for_backward
   -> rl_x:'a t
   -> fl_xx:'a s
   -> fl_x:'a s
+  -> l_x0:'a v
+  -> l_xx0:'a v
   -> dyn:'a t
   -> unit
   -> AD.t
   -> AD.t list
-  -> AD.t * AD.t * Lqr.t list * AD.t  * AD.t
+  -> AD.t * AD.t * Lqr.t list * AD.t * AD.t
 
 module type P = sig
   type theta
@@ -54,9 +58,10 @@ module Make (P : P) : sig
     :  ?linesearch:bool
     -> theta:P.theta
     -> stop:(int -> AD.t list -> bool)
-    -> AD.t 
-    -> AD.t list 
+    -> AD.t
+    -> AD.t list
     -> AD.t list * AD.t list * AD.t list
+
   val ilqr
     :  ?linesearch:bool
     -> theta:P.theta
