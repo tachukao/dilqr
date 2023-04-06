@@ -89,17 +89,12 @@ let forward acc x0 p0 =
         let p_prev, sigma_xx =
           try p_prev, AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) with
           | _ ->
-            (* let _, ss = Linalg.D.eig (AD.unpack_arr q_txx) in
-            let ss = Dense.Matrix.Z.re ss in
-            let _ = Mat.print ss in
-            let min_ss = Float.min (Mat.min' ss) 0. in
-            let _ = Stdio.printf "regularization in LQR : min ss %f" min_ss in
-            AD.Linalg.linsolve
-              AD.Maths.((F 1E-8 * AD.Mat.eye n) + q_txx) *)
             ( AD.Maths.(F 1E-3 * AD.Mat.eye n)
             , AD.Linalg.linsolve AD.Maths.(vxx + (F 1E-4 * AD.Mat.eye n)) (AD.Mat.eye n) )
         in
-        let inv_a = AD.Linalg.linsolve s.a (AD.Mat.eye (AD.Mat.row_num s.a)) in
+        let inv_a =
+          AD.Linalg.linsolve AD.Maths.(s.a + (F 1E-4 * AD.Mat.eye n)) (AD.Mat.eye n)
+        in
         let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
         let p2_inv = AD.Maths.(s.rluu + (s.b *@ p1 *@ transpose s.b)) in
         let p2 =

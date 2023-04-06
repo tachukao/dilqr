@@ -219,13 +219,18 @@ module Make (P : P) = struct
                       (AD.Mat.eye (AD.Mat.row_num s.a)) )
                 with
                 | _ ->
+                  let _ =
+                    Stdio.printf "iter %i failed in dilqr cov : replace with vxx" k
+                  in
                   ( AD.Maths.(F 1E-3 * AD.Mat.eye n)
                   , AD.Linalg.linsolve
                       AD.Maths.(vxx + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.a)))
                       (AD.Mat.eye (AD.Mat.row_num s.a)) )
               in
               let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
-              let inv_a = AD.Linalg.linsolve s.a (AD.Mat.eye n) in
+              let inv_a =
+                AD.Linalg.linsolve AD.Maths.(s.a + (F 1E-4 * AD.Mat.eye n)) (AD.Mat.eye n)
+              in
               let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
               let p1 = AD.Maths.(F 0.5 * (transpose p1 + p1)) in
               let p2_inv =
@@ -239,15 +244,6 @@ module Make (P : P) = struct
                     (AD.Mat.eye (AD.Mat.row_num s.b))
                 with
                 | _ ->
-                  (* Stdio.printf "expection in dLQR %s" (Base.Exn.to_string e);
-                   let _, ss = Linalg.D.eig (AD.unpack_arr p2_inv) in
-                  let ss = Dense.Matrix.Z.re ss in
-                  let _ = Mat.print ss in *)
-                  let _ =
-                    Stdio.printf "iter %i failed in dilqr cov : replace with rluu_inv" k
-                  in
-                  (* let norm_p2 = AD.Maths.l2norm' p2_inv in
-                  AD.Maths.(AD.Mat.eye (AD.Mat.row_num s.b) / (F 1E-4 + norm_p2)) *)
                   AD.Linalg.linsolve
                     AD.Maths.((F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)) + s.rluu)
                     (AD.Mat.eye (AD.Mat.row_num s.b))
