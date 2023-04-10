@@ -84,8 +84,10 @@ let forward acc x0 p0 =
       (fun (k, x, p_prev, tape) (s, (_K, _k, vxx, qtuu_inv)) ->
         let u = AD.Maths.((x *@ _K) + _k) in
         let n = AD.Mat.row_num s.a in
+        let p_prev = AD.Maths.(F 0.5 * (p_prev + transpose p_prev)) in
+        let vxx = AD.Maths.(F 0.5 * (vxx + transpose vxx)) in
         let q_xx = AD.Maths.(p_prev + vxx) in
-        let q_txx = AD.Maths.(F 0.5 * (q_xx + transpose q_xx)) in
+        let q_txx = q_xx in
         let p_prev, sigma_xx =
           try p_prev, AD.Linalg.linsolve q_txx (AD.Mat.eye (AD.Mat.row_num s.a)) with
           | _ ->
@@ -96,7 +98,9 @@ let forward acc x0 p0 =
           AD.Linalg.linsolve AD.Maths.(s.a + (F 1E-4 * AD.Mat.eye n)) (AD.Mat.eye n)
         in
         let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
+        let p1 = AD.Maths.(F 0.5 * (p1 + transpose p1)) in
         let p2_inv = AD.Maths.(s.rluu + (s.b *@ p1 *@ transpose s.b)) in
+        let p2_inv = AD.Maths.(F 0.5 * (p2_inv + transpose p2_inv)) in
         let p2 =
           try AD.Linalg.linsolve p2_inv (AD.Mat.eye (AD.Mat.row_num s.b)) with
           | _ ->
