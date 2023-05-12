@@ -195,74 +195,89 @@ module Make (P : P) = struct
       ()
 
 
-  let update ~theta =
-    let ffb = ffb ~theta in
-    let dyn = dyn ~theta in
-    fun x0 us ->
-      (* xf, xs, us are in reverse *)
-      let vxxf, vxf, tape, _, _p0 = ffb x0 us in
-      let acc, (df1, df2, _vxx0) = Lqr.backward vxxf vxf tape in
-      fun alpha ->
-        let _, _, _, uhats, sigma_xs, sigma_us =
-          List.fold_left
-            (fun (k, xhat, p_prev, uhats, sigma_xs, sigma_us)
-                 ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
-              let dx = AD.Maths.(xhat - s.x) in
-              let n = AD.Mat.row_num s.a in
-              let p_prev = AD.Maths.(F 0.5 * (p_prev + transpose p_prev)) in
-              let vxx = AD.Maths.(F 0.5 * (vxx + transpose vxx)) in
-              let q_xx = AD.Maths.(p_prev + vxx) in
-              let q_txx = q_xx in
-              let p_prev, sigma_xx =
-                try
-                  ( p_prev
-                  , AD.Linalg.linsolve
-                      AD.Maths.((F 1E-4 * AD.Mat.eye n) + q_txx)
-                      (AD.Mat.eye (AD.Mat.row_num s.a)) )
-                with
-                | _ ->
-                  let _ =
-                    Stdio.printf "iter %i failed in dilqr cov : replace with vxx" k
-                  in
-                  ( AD.Maths.(F 1E-3 * AD.Mat.eye n)
-                  , AD.Linalg.linsolve
-                      AD.Maths.(vxx + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.a)))
-                      (AD.Mat.eye (AD.Mat.row_num s.a)) )
-              in
-              let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
-              let sigma_uu = AD.Maths.(F 0.5 * (sigma_uu + transpose sigma_uu)) in
-              let inv_a =
-                AD.Linalg.linsolve AD.Maths.(s.a + (F 1E-4 * AD.Mat.eye n)) (AD.Mat.eye n)
-              in
-              let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
-              let p1 = AD.Maths.(F 0.5 * (transpose p1 + p1)) in
-              let p2_inv = AD.Maths.(s.rluu + (s.b *@ p1 *@ transpose s.b)) in
-              let p2_inv = AD.Maths.(F 0.5 * (p2_inv + transpose p2_inv)) in
-              let p2 =
-                try
-                  AD.Linalg.linsolve
-                    AD.Maths.(p2_inv + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)))
-                    (AD.Mat.eye (AD.Mat.row_num s.b))
-                with
-                | _ ->
-                  AD.Linalg.linsolve
-                    AD.Maths.((F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)) + s.rluu)
-                    (AD.Mat.eye (AD.Mat.row_num s.b))
-              in
-              let new_p = AD.Maths.(p1 - (p1 *@ transpose s.b *@ p2 *@ s.b *@ p1)) in
-              let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
-              let uhat = AD.Maths.(s.u + du) in
-              let uhats = uhat :: uhats in
-              let sigma_xs = sigma_xx :: sigma_xs in
-              let sigma_us = sigma_uu :: sigma_us in
-              let xhat = dyn ~k ~x:xhat ~u:uhat in
-              succ k, xhat, new_p, uhats, sigma_xs, sigma_us)
-            (0, x0, _p0, [], [], [])
-            acc
-        in
-        let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
-        List.rev uhats, List.rev sigma_xs, List.rev sigma_us, df
+let update_mean ~theta =
+  let ffb = ffb ~theta in
+  let dyn = dyn ~theta in
+  fun x0 us ->
+    (* xf, xs, us are in reverse *)
+    let vxxf, vxf, tape, _, _p0 = ffb x0 us in
+    let acc, (df1, df2, _vxx0) = Lqr.backward vxxf vxf tape in
+    fun alpha ->
+      let _, _, uhats =
+        List.fold_left
+          (fun (k, xhat, uhats)
+                ((s : Lqr.t), (_K, _k, _vxx, _qtuu_inv)) ->
+            let dx = AD.Maths.(xhat - s.x) in
+            let du = AD.Maths.((dx *@ _K) + (AD.F alpha * _k)) in
+            let uhat = AD.Maths.(s.u + du) in
+            let uhats = uhat :: uhats in
+            let xhat = dyn ~k ~x:xhat ~u:uhat in
+            succ k, xhat, uhats)
+          (0, x0, [])
+          acc
+      in
+      let df = (alpha *. df1) +. (0.5 *. (alpha *. alpha *. df2)) in
+      List.rev uhats, df
 
+let update_cov ~theta =
+  let ffb = ffb ~theta in
+  fun x0 us ->
+    (* xf, xs, us are in reverse *)
+    let vxxf, vxf, tape, _, _p0 = ffb x0 us in
+    let acc, (_, _, _vxx0) = Lqr.backward vxxf vxf tape in
+      let _, sigma_xs, sigma_us =
+        List.fold_left
+          (fun (p_prev, sigma_xs, sigma_us)
+                ((s : Lqr.t), (_K, _k, vxx, qtuu_inv)) ->
+            let n = AD.Mat.row_num s.a in
+            let p_prev = AD.Maths.(F 0.5 * (p_prev + transpose p_prev)) in
+            let vxx = AD.Maths.(F 0.5 * (vxx + transpose vxx)) in
+            let q_xx = AD.Maths.(p_prev + vxx) in
+            let q_txx = q_xx in
+            let p_prev, sigma_xx =
+              try
+                ( p_prev
+                , AD.Linalg.linsolve
+                    AD.Maths.((F 1E-4 * AD.Mat.eye n) + q_txx)
+                    (AD.Mat.eye (AD.Mat.row_num s.a)) )
+              with
+              | _ ->
+                let _ =
+                  Stdio.printf "failed in dilqr cov : replace with vxx"
+                in
+                ( AD.Maths.(F 1E-3 * AD.Mat.eye n)
+                , AD.Linalg.linsolve
+                    AD.Maths.(vxx + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.a)))
+                    (AD.Mat.eye (AD.Mat.row_num s.a)) )
+            in
+            let sigma_uu = AD.Maths.((transpose _K *@ sigma_xx *@ _K) + qtuu_inv) in
+            let sigma_uu = AD.Maths.(F 0.5 * (sigma_uu + transpose sigma_uu)) in
+            let inv_a =
+              AD.Linalg.linsolve AD.Maths.(s.a + (F 1E-4 * AD.Mat.eye n)) (AD.Mat.eye n)
+            in
+            let p1 = AD.Maths.(inv_a *@ (p_prev + s.rlxx) *@ transpose inv_a) in
+            let p1 = AD.Maths.(F 0.5 * (transpose p1 + p1)) in
+            let p2_inv = AD.Maths.(s.rluu + (s.b *@ p1 *@ transpose s.b)) in
+            let p2_inv = AD.Maths.(F 0.5 * (p2_inv + transpose p2_inv)) in
+            let p2 =
+              try
+                AD.Linalg.linsolve
+                  AD.Maths.(p2_inv + (F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)))
+                  (AD.Mat.eye (AD.Mat.row_num s.b))
+              with
+              | _ ->
+                AD.Linalg.linsolve
+                  AD.Maths.((F 1E-4 * AD.Mat.eye (AD.Mat.row_num s.b)) + s.rluu)
+                  (AD.Mat.eye (AD.Mat.row_num s.b))
+            in
+            let new_p = AD.Maths.(p1 - (p1 *@ transpose s.b *@ p2 *@ s.b *@ p1)) in
+            let sigma_xs = sigma_xx :: sigma_xs in
+            let sigma_us = sigma_uu :: sigma_us in
+            new_p, sigma_xs, sigma_us)
+          ( _p0, [], [])
+          acc
+      in
+      List.rev sigma_xs, List.rev sigma_us
 
   let trajectory ~theta =
     let forward = forward ~theta in
@@ -288,22 +303,6 @@ module Make (P : P) = struct
       in
       AD.Maths.(fl + rl) |> AD.unpack_flt
 
-
-  (* let sigma_uus ~theta =
-        let forward = forward ~theta in
-        let running_loss = running_loss ~theta in
-        let final_loss = final_loss ~theta in
-        fun x0 us ->
-          let kf, xf, xs, us = forward x0 us in
-          let fl = final_loss ~k:kf ~x:xf in
-          let _, rl =
-            List.fold_left2
-              (fun (k, rl) x u -> pred k, AD.Maths.(rl + running_loss ~k ~x ~u))
-              (kf - 1, AD.F 0.)
-              xs
-              us
-          in
-          AD.Maths.(fl + rl) |> AD.unpack_flt *)
 
   let differentiable_loss ~theta =
     let final_loss = final_loss ~theta in
@@ -335,29 +334,30 @@ module Make (P : P) = struct
 
   let learn ?(linesearch = true) ~theta =
     let loss = loss ~theta in
-    let update = update ~theta in
+    let update = update_mean ~theta in
     fun ~stop x0 us ->
-      let rec loop iter us sig_xs sig_us =
+      let rec loop iter us =
         if stop iter us
-        then us, sig_xs, sig_us
+        then let sig_xs, sig_us = update_cov ~theta x0 us in
+        us, sig_xs, sig_us
         else (
           let f0 = loss x0 us in
           let update = update x0 us in
           let f alpha =
-            let us, sig_xs, sig_us, df = update alpha in
+            let us, df = update alpha in
             let fv = loss x0 us in
-            fv, Some df, us, sig_xs, sig_us
+            fv, Some df, us
           in
           if not linesearch
           then (
-            let _, _, us, sig_xs, sig_us = f 1. in
-            loop (succ iter) us sig_xs sig_us)
+            let _, _, us = f 1. in
+            loop (succ iter) us)
           else (
             match Linesearch.backtrack f0 f with
-            | Some (us, sig_xs, sig_us) -> loop (succ iter) us sig_xs sig_us
+            | Some (us) -> loop (succ iter) us
             | None -> failwith "linesearch did not converge"))
       in
-      loop 0 us [] []
+      loop 0 us
 
 
   let g2 =
