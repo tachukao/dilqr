@@ -13,3 +13,10 @@ let decrease (delta, mu) =
     if mu > 1E-6 then mu else 0.
   in
   delta, mu
+
+let regularize mat =
+  let n = AD.Mat.row_num mat in
+  let w = AD.Mat.min_eig mat in
+  if w < 1e-8
+  then mat +. AD.abs w * Ad.Mat.eye n
+  else mat

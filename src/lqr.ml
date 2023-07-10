@@ -27,46 +27,39 @@ let backward flxx flx tape =
         :: tl ->
         let at = AD.Maths.transpose a in
         let bt = AD.Maths.transpose b in
+        let n = AD.Mat.row_num a in
         let m = AD.Mat.row_num b in
         let qx = AD.Maths.(rlx + (vx *@ at)) in
         let qu = AD.Maths.(rlu + (vx *@ bt)) in
-        let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
-        let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
+        (* If rlux != 0 then the matrix [rlxx, rlux^T; rlux, rluu] must be regularized,
+          instead of regularizng rlxx and rluu separately as done here *)
+        let rlxx_reg = Regularisation.regularize rlxx in
+        let rluu_reg = Regularisation.regularize rluu in
+        let qxx = AD.Maths.(rlxx_reg + (a *@ vxx *@ at)) in
+        let quu = AD.Maths.(rluu_reg + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.(F 0.5 * (quu + transpose quu)) in
-        let qtuu = AD.Maths.(quu + (AD.F mu * (b *@ bt))) in
-        let _, svs, _ =
-          Linalg.D.svd
-            (AD.unpack_arr
-               AD.Maths.(quu + ((AD.F 1. * AD.Mat.eye m) + (AD.F mu * (b *@ bt)))))
+        let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
+        let _K =
+          AD.Linalg.(linsolve quu qux)
+          |> AD.Maths.transpose
+          |> AD.Maths.neg
         in
-        if not (Linalg.D.is_posdef (AD.unpack_arr qtuu) && Mat.min' svs -. 1. > 1E-8)
-        then
-          (*if mu > 0. & mu < 1E-8 then Printf.printf "Regularizing... mu = %f \n%!" mu;*)
-          backward
-            (Regularisation.increase (delta, mu))
-            (kf - 1, flxx, flx, AD.F 0., AD.F 0., [])
-            tape
-        else (
-          let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
-          let qtux = qux in
-          let _K = AD.Linalg.(linsolve qtuu qtux) |> AD.Maths.transpose |> AD.Maths.neg in
-          let _k =
-            AD.Linalg.(linsolve qtuu AD.Maths.(transpose qu))
-            |> AD.Maths.transpose
-            |> AD.Maths.neg
-          in
-          let vxx = AD.Maths.(qxx + transpose (_K *@ qux)) in
-          let vxx = AD.Maths.((vxx + transpose vxx) / F 2.) in
-          let vx = AD.Maths.(qx + (qu *@ transpose _K)) in
-          let qtuu_inv = AD.Linalg.(linsolve qtuu (AD.Mat.eye m)) in
-          (*here quu_inv has regularization*)
-          let acc = (s, (_K, _k, vxx, qtuu_inv)) :: acc in
-          let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
-          let df2 = AD.Maths.(df2 + sum' (_k *@ transpose quu)) in
-          backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc) tl)
+        let _k =
+          AD.Linalg.(linsolve quu AD.Maths.(transpose qu))
+          |> AD.Maths.transpose
+          |> AD.Maths.neg
+        in
+        let vxx = AD.Maths.(qxx + transpose (_K *@ qux)) in
+        let vxx = AD.Maths.((vxx + transpose vxx) / F 2.) in
+        let vx = AD.Maths.(qx + (qu *@ transpose _K)) in
+        let quu_inv = AD.Linalg.(linsolve quu (AD.Mat.eye m)) in
+        let acc = (s, (_K, _k, vxx, quu_inv)) :: acc in
+        let df1 = AD.Maths.(df1 + sum' (_k *@ quu *@ transpose _k)) in
+        let df2 = AD.Maths.(df2 + sum' (_k *@ transpose quu)) in
+        backward (delta, mu) (k - 1, vxx, vx, df1, df2, acc) tl
       | [] -> k, vxx, vx, df1, df2, acc
     in
-    backward (1., 0.) (kf - 1, flxx, flx, AD.F 0., AD.F 0., []) tape
+    backward (1., 0.) (kf - 1, Regularisation.regularize flxx, flx, AD.F 0., AD.F 0., []) tape
   in
   assert (k = -1);
   acc, (AD.unpack_flt df1, AD.unpack_flt df2, vxx0)
