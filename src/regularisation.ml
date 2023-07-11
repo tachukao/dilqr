@@ -1,3 +1,6 @@
+open Owl
+module AD = Algodiff.D
+
 type t = float * float
 
 let increase (delta, mu) =
@@ -16,7 +19,8 @@ let decrease (delta, mu) =
 
 let regularize mat =
   let n = AD.Mat.row_num mat in
-  let w = AD.Mat.min_eig mat in
-  if w < 1e-8
-  then mat +. AD.abs w * Ad.Mat.eye n
+  let _, svs, _ = Linalg.D.svd (AD.unpack_arr mat) in
+  let w_min = Mat.min' svs in
+  if w_min < 1e-8
+  then AD.Maths.(mat - AD.F w_min * AD.Mat.eye n)
   else mat

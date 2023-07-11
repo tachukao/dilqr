@@ -27,7 +27,6 @@ let backward flxx flx tape =
         :: tl ->
         let at = AD.Maths.transpose a in
         let bt = AD.Maths.transpose b in
-        let n = AD.Mat.row_num a in
         let m = AD.Mat.row_num b in
         let qx = AD.Maths.(rlx + (vx *@ at)) in
         let qu = AD.Maths.(rlu + (vx *@ bt)) in
