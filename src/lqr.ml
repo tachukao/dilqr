@@ -30,12 +30,8 @@ let backward flxx flx tape =
         let m = AD.Mat.row_num b in
         let qx = AD.Maths.(rlx + (vx *@ at)) in
         let qu = AD.Maths.(rlu + (vx *@ bt)) in
-        (* If rlux != 0 then the matrix [rlxx, rlux^T; rlux, rluu] must be regularized,
-          instead of regularizng rlxx and rluu separately as done here *)
-        let rlxx_reg = Regularisation.regularize rlxx in
-        let rluu_reg = Regularisation.regularize rluu in
-        let qxx = AD.Maths.(rlxx_reg + (a *@ vxx *@ at)) in
-        let quu = AD.Maths.(rluu_reg + (b *@ vxx *@ bt)) in
+        let qxx = AD.Maths.(rlxx + (a *@ vxx *@ at)) in
+        let quu = AD.Maths.(rluu + (b *@ vxx *@ bt)) in
         let quu = AD.Maths.(F 0.5 * (quu + transpose quu)) in
         let qux = AD.Maths.(rlux + (b *@ vxx *@ at)) in
         let _K =
@@ -64,6 +60,7 @@ let backward flxx flx tape =
   acc, (AD.unpack_flt df1, AD.unpack_flt df2, vxx0)
 
 
+(* If rl_ux != 0, then these calculations for the foward pass covariance terms are incorrect! *)
 let forward acc x0 p0 =
   let _, xf, _, tape =
     (*add computation of P : 

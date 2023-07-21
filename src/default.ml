@@ -38,8 +38,10 @@ let forward_for_backward
           and b = dyn_u ~k ~x ~u
           and rlx = rl_x ~k ~x ~u
           and rlu = rl_u ~k ~x ~u in
-          let rlxx = rl_xx ~k ~x ~u in
-          let rluu = rl_uu ~k ~x ~u
+          (* If rlux != 0 then the matrix [rlxx, rlux^T; rlux, rluu] must be regularized,
+             instead of regularizng rlxx and rluu separately as done here *)
+          let rlxx = Regularisation.regularize (rl_xx ~k ~x ~u) in
+          let rluu = Regularisation.regularize (rl_uu ~k ~x ~u)
           and rlux = rl_ux ~k ~x ~u in
           let f = AD.Maths.(dyn ~k ~x ~u - (x *@ a) - (u *@ b)) in
           let s =
